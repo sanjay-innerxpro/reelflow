@@ -433,3 +433,4 @@ Logs: `storage/logs/laravel-*.log` (secrets redacted), **System logs** (audit tr
 - **Platform rules change:** limits live in `app/Services/Media/PlatformRequirements.php` and `config/reelflow.php` so they're easy to update.
 - **External accounts still required (all free):** a Meta developer app (App Review), a Google Cloud project with an OAuth client (verification and API audit), a Gemini or Groq key (or Ollama on the server), a Gmail App Password, a DuckDNS subdomain, and an Oracle Cloud account. Without them the related features stay inactive and show a clear message; nothing reports false success.
 - **Free tiers change:** free AI model names and daily limits, and the Always Free VM shapes, are set by the providers and change over time. If a free AI tier is withdrawn, switch `AI_PROVIDER` to `ollama` (fully self-hosted) or `none`.
+# reelflow
