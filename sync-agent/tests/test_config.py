@@ -100,6 +100,23 @@ class ConfigTests(TempDirTestCase):
         self.assertTrue(cfg.verify_tls)
         self.assertTrue(str(cfg.state_dir).endswith(("reelflow-agent", "ReelFlowAgent")))
 
+    def test_ffmpeg_options(self):
+        env = {"REELFLOW_SERVER_URL": "https://x.test", "REELFLOW_DEVICE_TOKEN": TOKEN}
+        folder = f'[[folders]]\nlabel = "A"\npath = "{self.watch.as_posix()}"\n'
+        cfg = self.load(self.write_config(folder), env)
+        self.assertIsNone(cfg.ffmpeg_path)
+        self.assertIsNone(cfg.ffprobe_path)
+        self.assertEqual(cfg.ffmpeg_timeout_seconds, 300)
+        path = self.write_config('ffmpeg_path = "tools/ffmpeg"\nffprobe_path = "ffprobe"\n'
+                                 'ffmpeg_timeout_seconds = 60\n' + folder)
+        cfg = self.load(path, env)
+        self.assertEqual(cfg.ffmpeg_path, str(path.parent / "tools" / "ffmpeg"))  # relative to config.toml
+        self.assertEqual(cfg.ffprobe_path, "ffprobe")  # bare name: looked up on PATH
+        self.assertEqual(cfg.ffmpeg_timeout_seconds, 60)
+        for bad in ("ffmpeg_path = 5\n", "ffmpeg_timeout_seconds = 0\n"):
+            with self.subTest(bad), self.assertRaises(ConfigError):
+                self.load(self.write_config(bad + folder), env)
+
     def test_environment_overrides_env_file(self):
         path = self.write_config(f'[[folders]]\nlabel = "A"\npath = "{self.watch.as_posix()}"\n',
                                  env_text="REELFLOW_SERVER_URL=https://file.test\nREELFLOW_DEVICE_TOKEN=rfd_fromfile123\n")

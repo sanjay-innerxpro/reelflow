@@ -298,9 +298,9 @@ def cmd_check(args: argparse.Namespace) -> int:
     db_path = cfg.db_path
     try:
         with StateDB(db_path) as db:
-            agent = Agent(cfg, db, api)
+            agent = Agent(cfg, db, api, media_toolkit=toolkit)
             started = time.monotonic()
-            resp = agent.heartbeat()
+            resp = agent.heartbeat(check_media=False)  # FFmpeg status is printed below
             elapsed = (time.monotonic() - started) * 1000
     except DeviceRevokedError as e:
         _print(f"Connection:    FAILED - device revoked ({e}). Create a new device token in the dashboard.")

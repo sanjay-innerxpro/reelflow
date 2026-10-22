@@ -270,7 +270,7 @@ class Agent:
             return self.media.missing_message()
         return self.db.last_error() or (self.db.last_media_error() if self.media_required else None)
 
-    def heartbeat(self) -> dict[str, Any]:
+    def heartbeat(self, *, check_media: bool = True) -> dict[str, Any]:
         """Send a heartbeat and apply the server's upload limits. Raises ApiError."""
         assert self.api is not None
         resp = self.api.heartbeat(self.heartbeat_body())
@@ -304,7 +304,7 @@ class Agent:
             log.info("device token accepted again; resuming uploads")
         self.heartbeat_ok = True
         self.auth_failed = False
-        if self.media_required:
+        if self.media_required and check_media:
             self.media_tools_ok = self.media.check_available(log)
         return resp
 
@@ -364,8 +364,11 @@ class Agent:
             log.info("%d already uploaded video(s) still need metadata/thumbnail/frames from this computer", marked)
         return marked
 
-    def process_media_once(self, limit: int = 1000) -> dict[str, int]:
-        """Send all pending media once (ignores retry times). Used by `scan`."""
+    def process_media_once(self, limit: int = 1000, exclude: Any = ()) -> dict[str, int]:
+        """Send all pending media once (ignores retry times). Used by `scan`.
+
+        ``exclude``: files whose media was already attempted during this scan.
+        """
         results: dict[str, int] = {}
         if not self.media_required or self.uploader is None:
             return results
@@ -374,7 +377,7 @@ class Agent:
             if pending:
                 results[MEDIA_PENDING] = pending
             return results
-        for rec in self.db.media_due(math.inf, limit=limit):
+        for rec in self.db.media_due(math.inf, limit=limit, exclude=exclude):
             if self.stop_event.is_set():
                 break
             outcome = self.uploader.process_media(rec)
@@ -583,7 +586,7 @@ class Agent:
             if self.media_required:
                 try:
                     self.media_sweep(force=True)
-                    summary.media = self.process_media_once()
+                    summary.media = self.process_media_once(exclude=attempted)
                 except (AuthError, DeviceRevokedError, NetworkError) as e:
                     self._handle_worker_error("media", e)
                     summary.message = str(e)

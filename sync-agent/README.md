@@ -15,6 +15,9 @@ server, where they are queued for auto-publishing.
   in two folders, both locations are registered but the bytes go up once.
 - Keeps local state in SQLite, so unchanged files are not hashed again after a
   restart. Writes rotating log files.
+- On shared hosting without FFmpeg (`MEDIA_PROCESSING=agent`), creates video
+  metadata, thumbnails and AI frames with FFmpeg on your computer
+  ([details](#shared-hosting-media_processingagent)).
 
 The core uses only the Python standard library (Python 3.10 or newer).
 
@@ -142,6 +145,8 @@ go unnoticed.
 | `verify_tls` | `true` | Only disable for a local test server. |
 | `use_watchdog` | `true` | Use `watchdog` when installed. |
 | `completion_poll_attempts` / `completion_poll_interval_seconds` | `3` / `2` | After an upload completes, how often to ask whether the server accepted it. Unconfirmed uploads are checked again at every scan. |
+| `ffmpeg_path` / `ffprobe_path` | found on `PATH` | FFmpeg executables, only needed when the server uses `MEDIA_PROCESSING=agent` (see below). A bare name is looked up on `PATH`; a path may be relative to the config file. If only `ffmpeg_path` is set, `ffprobe` next to it is used. |
+| `ffmpeg_timeout_seconds` | `300` | Time limit for each `ffmpeg`/`ffprobe` call. |
 
 Environment variables (or `.env` next to the agent / next to `config.toml`;
 real environment variables win):
@@ -163,9 +168,9 @@ python -m reelflow_agent [--config PATH] [--log-level LEVEL] <command>
 |---|---|
 | `run` | Long-running: watch, rescan periodically, send heartbeats, upload. Ctrl+C / SIGTERM finishes the current chunk, saves state and exits. |
 | `scan [--dry-run] [--no-wait]` | Rescan everything, upload all pending files once, then exit. `--dry-run` only lists files and changes nothing (no network). `--no-wait` does not wait for files that are still being copied. |
-| `status [--limit N]` | Counts per state, per folder, and recent problems. Works offline. |
-| `retry-failed [--include-rejected]` | Put `failed` (and optionally `rejected`/`skipped`) files back in the queue. |
-| `check` | Validate the config, check the folders and state dir, send a heartbeat and print the result. |
+| `status [--limit N]` | Counts per state, per folder, video media counts (agent media mode), and recent problems. Works offline. |
+| `retry-failed [--include-rejected]` | Put `failed` (and optionally `rejected`/`skipped`) files back in the queue; also retries failed video media. |
+| `check` | Validate the config, check the folders and state dir, find FFmpeg, send a heartbeat and print the result, including whether the server requires agent media (exit 1 if it does and FFmpeg is missing). |
 
 `run-agent.sh` / `run-agent.bat` use `.venv` if present and default to `run`.
 
@@ -204,6 +209,51 @@ error, `3` device revoked, `4` token rejected (401), `130` interrupted.
 A heartbeat is sent at startup and every `heartbeat_interval_seconds` with file
 counts and the last error, and returns the server's limits (chunk size, allowed
 extensions, maximum file size).
+
+## Shared hosting (MEDIA_PROCESSING=agent)
+
+On shared hosting (for example Hostinger Business) the server cannot run
+FFmpeg. There the app is configured with `MEDIA_PROCESSING=agent`, and the
+agent does the media work on **the computer it runs on**:
+
+- **FFmpeg must be installed on the computer running the agent** (both
+  `ffmpeg` and `ffprobe`):
+  - Ubuntu/Debian: `sudo apt install ffmpeg`
+  - Windows: `winget install Gyan.FFmpeg`, or download a build from
+    <https://www.gyan.dev/ffmpeg/builds/>, unzip it (for example to
+    `C:\ffmpeg`) and set `ffmpeg_path = 'C:\ffmpeg\bin\ffmpeg.exe'` and
+    `ffprobe_path = 'C:\ffmpeg\bin\ffprobe.exe'` in `config.toml`. The agent
+    also looks in the usual winget, Chocolatey, Scoop and `C:\ffmpeg\bin`
+    locations and in an `ffmpeg\bin` folder next to the agent.
+- Run `check`: it shows where FFmpeg was found and whether the server
+  requires agent media (`Media: server requires agent media ...`).
+
+The server announces the mode in the heartbeat (`media_processing`, plus
+`ai_frames`, `frame_width`, `thumbnail_width`). Older servers that do not send
+it are treated as `server` mode: nothing changes. In agent mode, for every file
+the server marks with `needs_media` (on registration, in status checks, and via
+a periodic lookup that also covers videos uploaded before the server switched
+modes) the agent:
+
+1. runs `ffprobe` and builds the metadata (width/height after rotation,
+   duration, frame rate, codecs, audio), exactly like the server would;
+2. extracts a thumbnail (`thumbnail_width` wide, at `min(1 s, duration/2)`) and
+   `ai_frames` caption frames (`frame_width` wide, from the middle of equal
+   segments) as JPEGs into a private temporary folder that is always deleted;
+3. sends them with `POST /api/sync/videos/{id}/media` (multipart). Only the
+   JSON metadata and images are sent, never local paths.
+
+This happens right after a file is registered/uploaded and never blocks or
+fails the upload itself; the media is tracked separately (`status` shows
+`pending` / `sent` / `failed`). Network errors and 5xx responses are retried
+with the normal backoff; a 422 (validation) response marks the media
+`failed` (use `retry-failed` after fixing the cause). Duplicate files the
+server already has get their media without the bytes being uploaded again.
+
+If FFmpeg is missing, the agent logs one clear error (also reported to the
+dashboard in the heartbeat), keeps uploading videos, keeps their media
+pending and sends it automatically once FFmpeg is found (no restart needed if
+it is installed to one of the searched locations).
 
 ## Troubleshooting
 
@@ -247,4 +297,11 @@ The tests need no network and no third-party packages: they start a fake
 ReelFlow API (`tests/fake_server.py`) on a random `127.0.0.1` port, implementing
 the same contract as `app/Http/Controllers/Api/SyncController.php`, including
 failure injection (429/5xx, validation errors, revoked device, corrupted
-assembly).
+assembly) and the multipart media endpoint. FFmpeg is faked in the tests. To
+also run the real-FFmpeg integration test (it creates a tiny test video with
+`lavfi testsrc`):
+
+```bash
+REELFLOW_TEST_FFMPEG=/usr/bin/ffmpeg REELFLOW_TEST_FFPROBE=/usr/bin/ffprobe \
+  python3 -m unittest discover -s tests -v
+```

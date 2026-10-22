@@ -102,6 +102,46 @@ class CliTests(ServerTestCase):
         code, out, _ = self.run_cli("retry-failed")
         self.assertIn("1 file(s) reset", out)
 
+    def write_tool_config(self, ffmpeg: str, ffprobe: str):
+        text = self.cfg_path.read_text()
+        self.cfg_path.write_text(f'ffmpeg_path = "{ffmpeg}"\nffprobe_path = "{ffprobe}"\n' + text)
+
+    def test_check_reports_missing_ffmpeg_in_agent_mode(self):
+        missing = (self.root / "no-ffmpeg").as_posix()
+        self.write_tool_config(missing + "/ffmpeg", missing + "/ffprobe")
+        self.server.media_processing = "agent"
+        code, out, err = self.run_cli("check")
+        self.assertEqual(code, 1, out + err)
+        self.assertIn("FFmpeg:        NOT FOUND", out)
+        self.assertIn("FFprobe:       NOT FOUND", out)
+        self.assertIn("requires agent media (MEDIA_PROCESSING=agent)", out)
+        self.assertIn("sudo apt install ffmpeg", out)
+        self.assertIn("winget install Gyan.FFmpeg", out)
+
+    def test_check_server_mode_does_not_need_ffmpeg(self):
+        missing = (self.root / "no-ffmpeg").as_posix()
+        self.write_tool_config(missing + "/ffmpeg", missing + "/ffprobe")
+        code, out, err = self.run_cli("check")
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("NOT FOUND", out)
+        self.assertIn("FFmpeg is not needed", out)
+
+    def test_status_shows_media_counts(self):
+        self.write("a.mp4", payload(2000))
+        self.write("b.mp4", payload(2000, seed=4))
+        code, out, err = self.run_cli("scan")
+        self.assertEqual(code, 0, out + err)
+        with StateDB(self.root / "state" / "state.sqlite3") as db:
+            db.update("Main:a.mp4", media_status="sent")
+            db.update("Main:b.mp4", media_status="failed", media_attempts=1, media_error="metadata.width: bad")
+        code, out, _ = self.run_cli("status")
+        self.assertEqual(code, 0)
+        self.assertIn("pending=0, sent=1, failed=1", out)
+        self.assertIn("[media failed] Main/b.mp4", out)
+        self.assertIn("metadata.width: bad", out)
+        code, out, _ = self.run_cli("retry-failed")
+        self.assertIn("1 file(s) with failed video media", out)
+
     def test_help(self):
         out = io.StringIO()
         with contextlib.redirect_stdout(out), self.assertRaises(SystemExit) as ctx:

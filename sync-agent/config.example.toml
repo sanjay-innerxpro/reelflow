@@ -48,6 +48,17 @@ verify_tls = true
 # completion_poll_attempts = 3
 # completion_poll_interval_seconds = 2
 
+# FFmpeg on THIS computer. Only used when the server runs with
+# MEDIA_PROCESSING=agent (shared hosting without FFmpeg): the agent then creates
+# each video's metadata, thumbnail and AI caption frames locally and uploads them.
+# Default: found automatically on PATH (and common install locations).
+#   Ubuntu:  sudo apt install ffmpeg
+#   Windows: winget install Gyan.FFmpeg   (or download https://www.gyan.dev/ffmpeg/builds/
+#            and point these at bin\ffmpeg.exe / bin\ffprobe.exe, single quotes!)
+# ffmpeg_path = 'C:\ffmpeg\bin\ffmpeg.exe'
+# ffprobe_path = 'C:\ffmpeg\bin\ffprobe.exe'
+# ffmpeg_timeout_seconds = 300      # per ffmpeg/ffprobe call
+
 # ---------------------------------------------------------------------------
 # Watched folders. Keep these blocks LAST: in TOML every key after a
 # [[folders]] line belongs to that folder entry.
