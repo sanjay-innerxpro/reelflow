@@ -11,11 +11,13 @@ use App\Models\SyncDevice;
 use App\Models\Video;
 use App\Support\DisplayTime;
 use App\Support\QueueHealth;
+use App\Support\SystemCheck;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\View\View;
 
 class DashboardController extends Controller
 {
-    public function __invoke(QueueHealth $queues): View
+    public function __invoke(QueueHealth $queues, SystemCheck $system): View
     {
         $tz = DisplayTime::timezone();
         $todayStart = now($tz)->startOfDay()->utc();
@@ -35,6 +37,10 @@ class DashboardController extends Controller
                 ->orderBy('scheduled_at')->limit(8)->get(),
             'activity' => ActivityLog::latest('created_at')->limit(12)->get(),
             'queues' => $queues->summary(),
+            'setup' => array_filter(
+                Cache::remember('reelflow:dashboard:checks', 60, fn () => $system->all()),
+                fn ($check) => $check['status'] !== SystemCheck::OK,
+            ),
         ]);
     }
 }

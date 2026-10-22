@@ -6,6 +6,7 @@ use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\CalendarController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DeviceController;
+use App\Http\Controllers\HealthController;
 use App\Http\Controllers\LogController;
 use App\Http\Controllers\PostController;
 use App\Http\Controllers\PostingRuleController;
@@ -13,6 +14,8 @@ use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\SocialAccountController;
 use App\Http\Controllers\VideoController;
 use Illuminate\Support\Facades\Route;
+
+Route::get('health', HealthController::class)->middleware('throttle:60,1')->name('health');
 
 // Public pages required by Meta App Review and Google OAuth verification.
 Route::view('privacy', 'legal.privacy')->name('legal.privacy');

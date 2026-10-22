@@ -4,6 +4,24 @@
         <div class="text-sm text-slate-500">Times shown in {{ \App\Support\DisplayTime::timezone() }}</div>
     </x-slot:header>
 
+    @if($setup)
+        <div class="card mb-6 {{ collect($setup)->contains('status', 'fail') ? 'border-red-200' : 'border-amber-200' }}">
+            <div class="flex items-center justify-between border-b border-slate-100 px-5 py-3">
+                <h2 class="card-title">Setup checklist</h2>
+                <span class="text-xs text-slate-500">Full report: <code>php artisan reels:doctor</code></span>
+            </div>
+            <ul class="divide-y divide-slate-100 text-sm">
+                @foreach($setup as $check)
+                    <li class="flex gap-3 px-5 py-2">
+                        <x-badge :color="$check['status'] === 'fail' ? 'red' : 'amber'">{{ $check['status'] === 'fail' ? 'action needed' : 'to do' }}</x-badge>
+                        <span class="w-56 shrink-0 font-medium">{{ $check['label'] }}</span>
+                        <span class="text-slate-600">{{ $check['message'] }}</span>
+                    </li>
+                @endforeach
+            </ul>
+        </div>
+    @endif
+
     <div class="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
         <x-stat label="Total videos" :value="$stats['videos']" :href="route('videos.index')" />
         <x-stat label="Awaiting processing" :value="$stats['awaiting']" :href="route('videos.index', ['status' => 'processing'])" tone="amber" />

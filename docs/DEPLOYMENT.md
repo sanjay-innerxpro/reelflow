@@ -23,6 +23,18 @@ Everything below can run at **zero cost**:
 
 On Oracle's Arm VM, every package below (PHP, MySQL, Redis, FFmpeg, Node) is available for arm64.
 
+## Quick install
+
+Once the VM exists and your DuckDNS name points at it (sections 0.1–0.2), one script does sections 1–10:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/sanjay-innerxpro/reelflow/main/deploy/install-server.sh
+sudo DOMAIN=yourname.duckdns.org EMAIL=you@example.com bash install-server.sh
+sudo -u www-data php /var/www/reelflow/current/artisan reels:create-user you@example.com
+```
+
+Re-running it is safe; existing passwords and `.env` values are kept. Add credentials to `/var/www/reelflow/shared/.env` whenever you have them, then run `sudo -u www-data php /var/www/reelflow/current/artisan optimize && sudo supervisorctl restart reelflow-horizon`. The manual steps below explain what the script does.
+
 ## 1. Packages
 
 ```bash

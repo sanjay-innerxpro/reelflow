@@ -1,34 +1,53 @@
 #!/usr/bin/env bash
-# Zero-downtime-ish release deploy:
-#   /var/www/reelflow/releases/<timestamp>  (code)
-#   /var/www/reelflow/shared/.env, shared/storage  (persistent)
+# Deploy a new release (layout created by deploy/install-server.sh):
+#   /var/www/reelflow/releases/<timestamp>   code
+#   /var/www/reelflow/shared/.env, shared/storage
 #   /var/www/reelflow/current -> releases/<timestamp>
-# Usage: deploy/deploy.sh <git-ref>
+#
+#   sudo bash /var/www/reelflow/current/deploy/deploy.sh [branch]
+#
+# Rollback: sudo bash deploy.sh --rollback   (switches to the previous release)
 set -euo pipefail
-REF="${1:-main}"
 BASE=/var/www/reelflow
-REPO="${REPO:-git@github.com:you/reelflow.git}"
+SHARED="$BASE/shared"
+REPO="${REPO:-$(git -C "$BASE/current" remote get-url origin 2>/dev/null || echo https://github.com/sanjay-innerxpro/reelflow.git)}"
+export COMPOSER_ALLOW_SUPERUSER=1
+artisan() { sudo -u www-data php "$BASE/current/artisan" "$@"; }
+
+[ "$(id -u)" -eq 0 ] || { echo "Run with sudo."; exit 1; }
+
+if [ "${1:-}" = "--rollback" ]; then
+  PREVIOUS="$(ls -1dt "$BASE"/releases/* | sed -n 2p)"
+  [ -n "$PREVIOUS" ] || { echo "No previous release."; exit 1; }
+  echo "Rolling back to $PREVIOUS (database migrations are NOT reverted)."
+  ln -sfn "$PREVIOUS" "$BASE/current"
+  artisan optimize
+  systemctl reload php8.3-fpm
+  artisan horizon:terminate
+  exit 0
+fi
+
+BRANCH="${1:-main}"
 RELEASE="$BASE/releases/$(date -u +%Y%m%d%H%M%S)"
 
-git clone --depth 1 --branch "$REF" "$REPO" "$RELEASE"
+git clone --depth 1 --branch "$BRANCH" "$REPO" "$RELEASE"
 cd "$RELEASE"
-ln -s "$BASE/shared/.env" .env
-rm -rf storage && ln -s "$BASE/shared/storage" storage
+ln -sfn "$SHARED/.env" .env
+rm -rf storage && ln -s "$SHARED/storage" storage
+composer install --no-dev --optimize-autoloader --no-interaction --quiet
+npm ci --silent && npm run build --silent && rm -rf node_modules
+chown -R www-data:www-data bootstrap/cache
 
-composer install --no-dev --optimize-autoloader --no-interaction
-npm ci && npm run build && rm -rf node_modules
-
-php artisan migrate --force
-php artisan config:cache
-php artisan route:cache
-php artisan view:cache
-php artisan event:cache
+# Backup before migrating so a bad migration can be undone.
+sudo -u www-data "$RELEASE/deploy/backup.sh" || echo "WARNING: pre-deploy backup failed"
 
 ln -sfn "$RELEASE" "$BASE/current"
-sudo systemctl reload php8.3-fpm
-# Horizon finishes running jobs (stopwaitsecs) and is restarted by Supervisor.
-php "$BASE/current/artisan" horizon:terminate
+artisan migrate --force
+artisan optimize
+systemctl reload php8.3-fpm
+# Horizon lets running jobs finish (stopwaitsecs) and Supervisor restarts it.
+artisan horizon:terminate
 
-# Keep the five most recent releases.
 ls -1dt "$BASE"/releases/* | tail -n +6 | xargs -r rm -rf
-echo "Deployed $REF to $RELEASE"
+artisan reels:doctor || true
+echo "Deployed $BRANCH -> $RELEASE"

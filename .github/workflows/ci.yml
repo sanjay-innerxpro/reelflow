@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  php:
+    name: PHP tests (${{ matrix.db }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        db: [sqlite, mysql]
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: reelflow_test
+        ports: ['3306:3306']
+        options: --health-cmd="mysqladmin ping -proot" --health-interval=10s --health-timeout=5s --health-retries=5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: bcmath, ctype, curl, dom, fileinfo, intl, mbstring, pdo_mysql, pdo_sqlite, zip, pcntl, posix
+          coverage: none
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: |
+          composer install --no-interaction --prefer-dist --no-progress
+          npm ci
+          npm run build
+
+      - name: Prepare environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+
+      - name: Code style
+        if: matrix.db == 'sqlite'
+        run: vendor/bin/pint --test
+
+      - name: Tests (SQLite)
+        if: matrix.db == 'sqlite'
+        run: php artisan test
+
+      - name: Tests (MySQL 8)
+        if: matrix.db == 'mysql'
+        env:
+          DB_CONNECTION: mysql
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_DATABASE: reelflow_test
+          DB_USERNAME: root
+          DB_PASSWORD: root
+        run: php vendor/bin/phpunit
+
+  agent:
+    name: Sync agent tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Unit tests
+        working-directory: sync-agent
+        run: python -m unittest discover -s tests
+
+  scripts:
+    name: Shell scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: ShellCheck
+        run: shellcheck -S warning deploy/*.sh sync-agent/run-agent.sh

@@ -355,7 +355,7 @@ Each post moves through **stages** that are persisted immediately: `pending → 
 ## 15. Testing
 
 ```bash
-php artisan test                       # 142 tests (SQLite in memory)
+php artisan test                       # 149 tests (SQLite in memory)
 # against MySQL/MariaDB (create the reelflow_test DB first):
 DB_CONNECTION=mariadb DB_DATABASE=reelflow_test DB_USERNAME=root DB_PASSWORD= php vendor/bin/phpunit
 
@@ -374,6 +374,22 @@ External APIs are faked in tests (`Http::fake`, a mocked PSR-18 transport for th
 ---
 
 ## 16. Deployment
+
+**Quick install (fresh Ubuntu 24.04 VM, e.g. Oracle Always Free):**
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/sanjay-innerxpro/reelflow/main/deploy/install-server.sh
+sudo DOMAIN=yourname.duckdns.org EMAIL=you@example.com bash install-server.sh
+```
+
+The installer sets up PHP 8.3, MySQL, Redis, FFmpeg, nginx with a Let's Encrypt certificate, Horizon under Supervisor, cron, nightly backups and log rotation. It generates random database and Redis passwords, builds and migrates the app, and prints the next steps. API credentials (Meta, Google, AI, SMTP) can be added to `/var/www/reelflow/shared/.env` later; until then those features show as "to do" and nothing fails. Updates use `sudo bash /var/www/reelflow/current/deploy/deploy.sh`, which takes a backup before migrating; roll back with `--rollback`.
+
+**Readiness and monitoring:**
+
+- `php artisan reels:doctor` checks the database, Redis, the scheduler and worker heartbeats, HTTPS, debug mode, FFmpeg, storage space, email, AI, the Meta and Google apps, accounts, devices and failed jobs. The same checklist appears on the dashboard until everything is green.
+- `GET /health` returns 200 when the database, cache, scheduler and workers are alive and 503 otherwise, without revealing any configuration. Point a free uptime monitor (e.g. UptimeRobot) at it to get an email if cron or the workers stop.
+- `php artisan reels:heartbeat` queues the worker heartbeat immediately, instead of waiting for the 5-minute cycle.
+- CI: `.github/workflows/ci.yml` runs on every push (free for public repositories). It runs the PHP tests on SQLite and MySQL 8, code style, the asset build, the agent tests and ShellCheck.
 
 See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the full Ubuntu VPS guide: packages, MySQL, Redis, FFmpeg, nginx and HTTPS, Supervisor or systemd, cron, backups, log rotation, deploy and rollback. Ready-to-edit files are in [`deploy/`](deploy).
 
@@ -433,4 +449,3 @@ Logs: `storage/logs/laravel-*.log` (secrets redacted), **System logs** (audit tr
 - **Platform rules change:** limits live in `app/Services/Media/PlatformRequirements.php` and `config/reelflow.php` so they're easy to update.
 - **External accounts still required (all free):** a Meta developer app (App Review), a Google Cloud project with an OAuth client (verification and API audit), a Gemini or Groq key (or Ollama on the server), a Gmail App Password, a DuckDNS subdomain, and an Oracle Cloud account. Without them the related features stay inactive and show a clear message; nothing reports false success.
 - **Free tiers change:** free AI model names and daily limits, and the Always Free VM shapes, are set by the providers and change over time. If a free AI tier is withdrawn, switch `AI_PROVIDER` to `ollama` (fully self-hosted) or `none`.
-# reelflow
