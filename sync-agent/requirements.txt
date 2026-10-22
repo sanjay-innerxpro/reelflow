@@ -1,0 +1,8 @@
+# The agent's core uses only the Python standard library (Python >= 3.10).
+#
+# Optional: instant file change notifications. Without it the agent falls back
+# to periodic scans (scan_interval_seconds).
+watchdog>=4.0
+#
+# Only needed on Python 3.10 (3.11+ ships tomllib):
+tomli>=2.0; python_version < "3.11"

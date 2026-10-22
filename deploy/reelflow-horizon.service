@@ -1,0 +1,19 @@
+# systemd alternative to Supervisor: /etc/systemd/system/reelflow-horizon.service
+# sudo systemctl daemon-reload && sudo systemctl enable --now reelflow-horizon
+[Unit]
+Description=ReelFlow queue workers (Laravel Horizon)
+After=network.target redis-server.service mysql.service
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/reelflow/current
+ExecStart=/usr/bin/php artisan horizon
+ExecStop=/usr/bin/php artisan horizon:terminate
+Restart=always
+RestartSec=5
+TimeoutStopSec=3700
+KillMode=mixed
+
+[Install]
+WantedBy=multi-user.target

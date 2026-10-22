@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true"
+>
+    <testsuites>
+        <testsuite name="Unit">
+            <directory>tests/Unit</directory>
+        </testsuite>
+        <testsuite name="Feature">
+            <directory>tests/Feature</directory>
+        </testsuite>
+    </testsuites>
+    <source>
+        <include>
+            <directory>app</directory>
+        </include>
+    </source>
+    <php>
+        <env name="APP_ENV" value="testing"/>
+        <env name="APP_MAINTENANCE_DRIVER" value="file"/>
+        <env name="BCRYPT_ROUNDS" value="4"/>
+        <env name="BROADCAST_CONNECTION" value="null"/>
+        <env name="CACHE_STORE" value="array"/>
+        <env name="DB_CONNECTION" value="sqlite"/>
+        <env name="DB_DATABASE" value=":memory:"/>
+        <env name="DB_URL" value=""/>
+        <env name="MAIL_MAILER" value="array"/>
+        <env name="QUEUE_CONNECTION" value="sync"/>
+        <env name="QUEUE_LONG_CONNECTION" value="sync"/>
+        <env name="VIDEO_STORAGE_DISK" value="videos"/>
+        <env name="AI_PROVIDER" value="none"/>
+        <env name="AI_API_KEY" value=""/>
+        <env name="TRANSCRIPTION_PROVIDER" value="none"/>
+        <env name="REELFLOW_TIMEZONE" value="Asia/Kolkata"/>
+        <env name="REELFLOW_ADMIN_EMAIL" value="admin@example.test"/>
+        <env name="META_APP_ID" value="test-app"/>
+        <env name="META_APP_SECRET" value="test-secret"/>
+        <env name="META_REDIRECT_URI" value="http://localhost/oauth/meta/callback"/>
+        <env name="GOOGLE_CLIENT_ID" value="test-client"/>
+        <env name="GOOGLE_CLIENT_SECRET" value="test-secret"/>
+        <env name="GOOGLE_REDIRECT_URI" value="http://localhost/oauth/google/callback"/>
+        <env name="UPLOAD_CHUNK_SIZE_MB" value="1"/>
+        <env name="AI_DAILY_BUDGET_USD" value=""/>
+        <env name="SESSION_DRIVER" value="array"/>
+        <env name="PULSE_ENABLED" value="false"/>
+        <env name="TELESCOPE_ENABLED" value="false"/>
+        <env name="NIGHTWATCH_ENABLED" value="false"/>
+    </php>
+</phpunit>

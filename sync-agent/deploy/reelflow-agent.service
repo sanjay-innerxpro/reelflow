@@ -1,0 +1,30 @@
+# systemd --user unit for the ReelFlow sync agent.
+#
+# Install (adjust the path if the agent lives elsewhere):
+#   mkdir -p ~/.config/systemd/user
+#   cp deploy/reelflow-agent.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now reelflow-agent
+#   loginctl enable-linger "$USER"     # optional: keep running when logged out
+# Logs: journalctl --user -u reelflow-agent -f   (and the rotating log file)
+
+[Unit]
+Description=ReelFlow folder sync agent
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/reelflow/sync-agent
+ExecStart=%h/reelflow/sync-agent/.venv/bin/python -m reelflow_agent run
+Environment=PYTHONUNBUFFERED=1
+Restart=on-failure
+RestartSec=30
+# 2 = configuration error, 3 = device revoked: restarting will not help.
+RestartPreventExitStatus=2 3
+TimeoutStopSec=120
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=default.target

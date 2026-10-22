@@ -1,0 +1,5 @@
+# crontab -u www-data -e
+# Laravel scheduler: dispatches due posts every minute, plans slots, health checks, summaries.
+* * * * * cd /var/www/reelflow/current && php artisan schedule:run >> /dev/null 2>&1
+# Nightly database backup (see deploy/backup.sh)
+15 2 * * * /var/www/reelflow/current/deploy/backup.sh >> /var/www/reelflow/shared/storage/logs/backup.log 2>&1

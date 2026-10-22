@@ -1,0 +1,63 @@
+# ReelFlow sync agent configuration.
+# Copy to config.toml and edit. Secrets (server URL + device token) do NOT go
+# here: put them in .env next to the agent (see .env.example) or in the
+# environment as REELFLOW_SERVER_URL / REELFLOW_DEVICE_TOKEN.
+
+# File extensions to upload (case-insensitive). The server's own list from the
+# heartbeat is also enforced; files it would reject are marked "skipped".
+extensions = ["mp4", "mov", "webm", "m4v"]
+
+# Glob patterns ignored in any path component (case-insensitive). Patterns
+# containing "/" are matched against the whole relative path instead.
+ignore_patterns = [".*", "*.part", "*.crdownload", "*.tmp", "~$*"]
+
+# A file must keep the same size + modification time for this long (and be
+# readable) before it is considered fully copied.
+stability_seconds = 10
+
+# Full rescan interval. With the optional `watchdog` package, new files are
+# also noticed instantly; without it this is the detection delay.
+scan_interval_seconds = 60
+
+heartbeat_interval_seconds = 60
+max_concurrent_uploads = 1          # 1-8
+max_retries = 8                     # per request and per file; exponential backoff + jitter
+# retry_backoff_base_seconds = 2
+# retry_backoff_max_seconds = 300
+
+# Where the SQLite state DB and logs live. Default:
+#   Linux:   ~/.local/state/reelflow-agent
+#   Windows: %LOCALAPPDATA%\ReelFlowAgent
+# state_dir = "~/.local/state/reelflow-agent"
+# log_dir = "~/.local/state/reelflow-agent/logs"
+
+log_level = "INFO"                  # DEBUG, INFO, WARNING, ERROR
+# log_max_bytes = 5242880
+# log_backup_count = 5
+
+# Per request; covers sending one whole chunk. Raise it on slow uplinks.
+request_timeout_seconds = 120
+
+# Only ever set to false for a local test server with a self-signed cert.
+verify_tls = true
+
+# Use watchdog for instant change notifications when it is installed.
+# use_watchdog = true
+
+# After an upload completes, ask the server a few times whether it was accepted.
+# completion_poll_attempts = 3
+# completion_poll_interval_seconds = 2
+
+# ---------------------------------------------------------------------------
+# Watched folders. Keep these blocks LAST: in TOML every key after a
+# [[folders]] line belongs to that folder entry.
+# One [[folders]] block per watched folder. Sub-folders are included.
+# The label is what the server sees; the local path is never sent.
+# Labels: letters, digits, spaces, "_", "-", "." (max 120 chars).
+[[folders]]
+label = "Phone Videos"
+path = "~/Videos/ReelFlow"          # Windows: 'C:\Users\you\Videos\ReelFlow' (single quotes!)
+
+# [[folders]]
+# label = "Camera"
+# path = "/media/you/SDCARD/DCIM"
