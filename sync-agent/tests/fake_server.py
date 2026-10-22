@@ -13,6 +13,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Callable
 
 TOKEN = "rfd_testtoken_0123456789abcdef"
+MAX_MEDIA_KB = 2048  # reelflow.media.agent_max_upload_kb
 
 
 @dataclass
@@ -75,6 +76,94 @@ class Video:
     processing_error: str | None = None
     sources: list[tuple[str, str]] = field(default_factory=list)
     content: bytes | None = None
+    media_received: bool = False
+    metadata: dict[str, Any] | None = None
+    thumbnail: bytes | None = None
+    frames: list[bytes] = field(default_factory=list)
+
+
+@dataclass
+class MediaPost:
+    video_id: int
+    fields: dict[str, list[str]]
+    files: dict[str, list["MultipartFile"]]
+    metadata: dict[str, Any] | None = None
+
+
+@dataclass
+class MultipartFile:
+    name: str
+    filename: str
+    content_type: str
+    content: bytes
+
+
+class MultipartError(ValueError):
+    pass
+
+
+def parse_multipart(body: bytes, content_type: str) -> tuple[dict[str, list[str]], dict[str, list[MultipartFile]]]:
+    """Strict RFC 7578 parser (like PHP's): returns (fields, files) keyed by field name."""
+    m = re.match(r'^multipart/form-data;\s*boundary=("?)([^";]+)\1\s*$', content_type or "")
+    if not m:
+        raise MultipartError("Content-Type is not multipart/form-data with a boundary")
+    delim = b"--" + m.group(2).encode("ascii")
+    if not body.startswith(delim + b"\r\n"):
+        raise MultipartError("body does not start with the boundary")
+    end = b"\r\n" + delim + b"--\r\n"
+    if not body.endswith(end):
+        raise MultipartError("missing closing boundary")
+    inner = body[len(delim) + 2 : -len(end)]
+    fields: dict[str, list[str]] = {}
+    files: dict[str, list[MultipartFile]] = {}
+    for raw in inner.split(b"\r\n" + delim + b"\r\n"):
+        head, sep, content = raw.partition(b"\r\n\r\n")
+        if not sep:
+            raise MultipartError("part without header/body separator")
+        headers = {}
+        for line in head.decode("utf-8").split("\r\n"):
+            k, _, v = line.partition(":")
+            headers[k.strip().lower()] = v.strip()
+        disp = headers.get("content-disposition", "")
+        if not disp.startswith("form-data;"):
+            raise MultipartError(f"bad Content-Disposition: {disp!r}")
+        params = dict(re.findall(r';\s*(\w+)="((?:[^"\\]|\\.)*)"', disp))
+        name = params.get("name")
+        if not name:
+            raise MultipartError("part without a name")
+        if "filename" in params:
+            files.setdefault(name, []).append(
+                MultipartFile(name, params["filename"], headers.get("content-type", ""), content))
+        else:
+            fields.setdefault(name, []).append(content.decode("utf-8"))
+    return fields, files
+
+
+def _validate_metadata(meta: Any) -> dict[str, list[str]]:
+    """Mirror of AgentMediaRequest::after()."""
+    errors: dict[str, list[str]] = {}
+
+    def num(v: Any) -> bool:
+        return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+    def check(field: str, ok: bool, msg: str) -> None:
+        if not ok:
+            errors[f"metadata.{field}"] = [msg]
+
+    for f in ("width", "height"):
+        v = meta.get(f)
+        check(f, isinstance(v, int) and not isinstance(v, bool) and 1 <= v <= 16384,
+              f"The {f} field must be an integer between 1 and 16384.")
+    d = meta.get("duration")
+    check("duration", num(d) and 0 <= d <= 86400, "The duration field must be between 0 and 86400.")
+    fr = meta.get("frame_rate")
+    check("frame_rate", fr is None or (num(fr) and 0 <= fr <= 1000), "The frame rate field must be between 0 and 1000.")
+    for f in ("video_codec", "audio_codec"):
+        v = meta.get(f)
+        check(f, v is None or (isinstance(v, str) and len(v) <= 40), f"The {f} field must be a string (max 40).")
+    ha = meta.get("has_audio")
+    check("has_audio", ha is None or isinstance(ha, bool), "The has audio field must be true or false.")
+    return errors
 
 
 def _sanitize_relative(path: str) -> str | None:
@@ -99,8 +188,15 @@ class FakeSyncServer:
         chunk_size: int = 1024,
         allowed_extensions: tuple[str, ...] = ("mp4", "mov", "webm", "m4v"),
         max_file_size: int = 10 * 1024 * 1024,
+        media_processing: str | None = "server",
     ):
         self.token = token
+        # None = an older server that sends no media fields at all.
+        self.media_processing = media_processing
+        self.ai_frames = 6
+        self.frame_width = 512
+        self.thumbnail_width = 480
+        self.media_posts: list[MediaPost] = []
         self.chunk_size = chunk_size
         self.allowed_extensions = list(allowed_extensions)
         self.max_file_size = max_file_size
@@ -243,6 +339,7 @@ class FakeSyncServer:
             ("POST", r"^/api/sync/videos/lookup$", self._lookup),
             ("POST", r"^/api/sync/videos$", self._register),
             ("GET", r"^/api/sync/videos/(\d+)$", self._show_video),
+            ("POST", r"^/api/sync/videos/(\d+)/media$", self._media),
             ("GET", r"^/api/sync/uploads/([0-9a-f-]{36})$", self._show_upload),
             ("PUT", r"^/api/sync/uploads/([0-9a-f-]{36})/chunks/(\d+)$", self._chunk),
             ("POST", r"^/api/sync/uploads/([0-9a-f-]{36})/complete$", self._complete),
@@ -268,18 +365,32 @@ class FakeSyncServer:
             "server_time": "2026-10-22T10:00:00+00:00",
             "device": {"id": 7, "name": "Test PC"},
             "config": {
+                **({} if self.media_processing is None else {
+                    "media_processing": self.media_processing,
+                    "ai_frames": self.ai_frames,
+                    "frame_width": self.frame_width,
+                    "thumbnail_width": self.thumbnail_width,
+                }),
                 "chunk_size_bytes": self.chunk_size,
                 "allowed_extensions": self.allowed_extensions,
                 "max_file_size_bytes": self.max_file_size,
             },
         }
 
+    def needs_media(self, v: Video) -> bool:
+        return self.media_processing == "agent" and not v.media_received and v.status != "cancelled"
+
+    def _with_media_flag(self, v: Video, payload: dict[str, Any]) -> dict[str, Any]:
+        if self.media_processing is not None:
+            payload["needs_media"] = self.needs_media(v)
+        return payload
+
     def _lookup(self, data, body, headers):
         out = {}
         for cs in data.get("checksums", []):
             v = self.by_checksum.get(cs.lower())
             if v:
-                out[v.checksum] = {"video_id": v.id, "status": v.status, "uploaded": v.uploaded}
+                out[v.checksum] = self._with_media_flag(v, {"video_id": v.id, "status": v.status, "uploaded": v.uploaded})
         return 200, {"videos": out}
 
     def _register(self, data, body, headers):
@@ -314,7 +425,8 @@ class FakeSyncServer:
                 session = self._new_session(video)
             video.status, video.processing_error = "uploading", None
         payload = {
-            "video": {"id": video.id, "status": video.status, "uploaded": video.uploaded, "duplicate": duplicate},
+            "video": self._with_media_flag(video, {"id": video.id, "status": video.status, "uploaded": video.uploaded,
+                                                   "duplicate": duplicate}),
             "upload": session.payload() if session else None,
         }
         return (200 if duplicate else 201), payload
@@ -323,8 +435,57 @@ class FakeSyncServer:
         v = self.videos.get(int(vid))
         if not v:
             return 404, {"message": "Not Found"}
-        return 200, {"video": {"id": v.id, "status": v.status, "uploaded": v.uploaded,
-                               "processing_error": v.processing_error}}
+        return 200, {"video": self._with_media_flag(v, {"id": v.id, "status": v.status, "uploaded": v.uploaded,
+                                                        "processing_error": v.processing_error})}
+
+    def _media(self, data, body, headers, vid):
+        v = self.videos.get(int(vid))
+        if not v or not v.sources:
+            return 404, {"message": "Not Found"}
+        try:
+            fields, files = parse_multipart(body, headers.get("Content-Type", ""))
+        except (MultipartError, UnicodeDecodeError) as e:
+            return 400, {"error": "bad_multipart", "message": str(e)}
+        post = MediaPost(v.id, fields, files)
+        self.media_posts.append(post)
+        errors: dict[str, list[str]] = {}
+        meta = None
+        raw_meta = fields.get("metadata", [None])[0]
+        if raw_meta is None:
+            errors["metadata"] = ["The metadata field is required."]
+        else:
+            try:
+                meta = json.loads(raw_meta)
+            except ValueError:
+                errors["metadata"] = ["The metadata field must be a valid JSON string."]
+            if isinstance(meta, dict):
+                errors.update(_validate_metadata(meta))
+        thumbs = files.get("thumbnail", [])
+
+        def bad_image(f: MultipartFile) -> str | None:
+            if not f.content.startswith(b"\xff\xd8\xff"):
+                return "must be a file of type: jpg, jpeg."
+            if len(f.content) > MAX_MEDIA_KB * 1024:
+                return f"must not be greater than {MAX_MEDIA_KB} kilobytes."
+            return None
+
+        if len(thumbs) != 1:
+            errors["thumbnail"] = ["The thumbnail field is required."]
+        elif bad_image(thumbs[0]):
+            errors["thumbnail"] = ["The thumbnail field " + bad_image(thumbs[0])]
+        frames = files.get("frames[]", [])
+        if len(frames) > 12:
+            errors["frames"] = ["The frames field must not have more than 12 items."]
+        for i, f in enumerate(frames):
+            if bad_image(f):
+                errors[f"frames.{i}"] = [f"The frames.{i} field " + bad_image(f)]
+        if errors:
+            return 422, {"message": next(iter(errors.values()))[0], "errors": errors}
+        post.metadata = meta
+        v.media_received, v.metadata, v.thumbnail = True, meta, thumbs[0].content
+        v.frames = [f.content for f in frames]
+        return 200, {"video": {"id": v.id, "status": v.status, "needs_media": self.needs_media(v),
+                               "frames": len(v.frames)}}
 
     def _show_upload(self, data, body, headers, sid):
         s = self.sessions.get(sid)
