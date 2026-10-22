@@ -22,13 +22,7 @@ class QueueHealth
      */
     public function summary(): array
     {
-        $horizon = 'unknown';
-        try {
-            $masters = app(MasterSupervisorRepository::class)->all();
-            $horizon = $masters === [] ? 'inactive' : (collect($masters)->contains(fn ($m) => $m->status === 'paused') ? 'paused' : 'running');
-        } catch (Throwable) {
-            $horizon = 'unavailable';
-        }
+        $horizon = config('reelflow.queue_mode') === 'cron' ? 'cron mode' : $this->horizonStatus();
 
         $sizes = [];
         foreach (self::QUEUES['redis'] as $queue) {
@@ -43,5 +37,16 @@ class QueueHealth
             'failed_jobs' => (int) rescue(fn () => DB::table('failed_jobs')->count(), 0, false),
             'sizes' => $sizes,
         ];
+    }
+
+    private function horizonStatus(): string
+    {
+        try {
+            $masters = app(MasterSupervisorRepository::class)->all();
+
+            return $masters === [] ? 'inactive' : (collect($masters)->contains(fn ($m) => $m->status === 'paused') ? 'paused' : 'running');
+        } catch (Throwable) {
+            return 'unavailable';
+        }
     }
 }

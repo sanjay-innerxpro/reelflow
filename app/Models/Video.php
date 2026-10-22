@@ -22,7 +22,8 @@ class Video extends Model
         'mime_type', 'size_bytes', 'width', 'height', 'duration_seconds', 'frame_rate', 'video_codec', 'audio_codec',
         'has_audio', 'thumbnail_disk', 'thumbnail_key', 'language', 'category', 'topic', 'status', 'ai_status',
         'ai_confidence', 'allow_reuse', 'processing_error', 'validation_warnings', 'upload_failures', 'uploaded_at',
-        'processing_started_at', 'processed_at', 'analyzed_at', 'storage_deleted_at',
+        'processing_started_at', 'processed_at', 'analyzed_at', 'storage_deleted_at', 'media_source', 'ai_frame_keys',
+        'media_received_at',
     ];
 
     protected function casts(): array
@@ -44,6 +45,8 @@ class Video extends Model
             'processed_at' => 'datetime',
             'analyzed_at' => 'datetime',
             'storage_deleted_at' => 'datetime',
+            'ai_frame_keys' => 'array',
+            'media_received_at' => 'datetime',
         ];
     }
 
@@ -57,6 +60,17 @@ class Video extends Model
         $ratio = $this->aspectRatio();
 
         return $ratio !== null && $ratio < 1;
+    }
+
+    /**
+     * In agent media mode the sync agent must still send metadata,
+     * thumbnail and frames for this video.
+     */
+    public function needsAgentMedia(): bool
+    {
+        return config('reelflow.media.processing') === 'agent'
+            && $this->media_received_at === null
+            && ! in_array($this->status, [VideoStatus::Cancelled], true);
     }
 
     public function hasStoredFile(): bool

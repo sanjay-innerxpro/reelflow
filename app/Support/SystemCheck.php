@@ -61,8 +61,8 @@ class SystemCheck
                 return $ok ? [self::OK, 'Read/write OK ('.config('cache.default').')'] : [self::FAIL, 'Cache did not return the stored value'];
             }),
             'scheduler' => $this->heartbeat('Scheduler (cron)', self::SCHEDULER_KEY, 3, 'Add the cron entry: * * * * * php artisan schedule:run'),
-            'workers' => $this->heartbeat('Queue workers', 'reelflow:heartbeat:worker:default', 12, 'Start Horizon (php artisan horizon) or queue:work for the "redis" connection'),
-            'workers_long' => $this->heartbeat('Publishing workers', 'reelflow:heartbeat:worker:long', 12, 'Start Horizon or queue:work for the "'.config('queue.long_connection').'" connection'),
+            'workers' => $this->heartbeat('Queue workers', 'reelflow:heartbeat:worker:default', 12, $this->workerFix()),
+            'workers_long' => $this->heartbeat('Publishing workers', 'reelflow:heartbeat:worker:long', 12, $this->workerFix()),
         ];
     }
 
@@ -83,6 +83,9 @@ class SystemCheck
                 : [$production ? self::FAIL : self::WARN, 'APP_URL must be https:// in production (Meta OAuth requires it): '.config('app.url')]),
             'timezone' => $this->check('Stored timezone', fn () => config('app.timezone') === 'UTC' ? [self::OK, 'UTC'] : [self::FAIL, 'config app.timezone must be UTC']),
             'ffmpeg' => $this->check('FFmpeg / FFprobe', function () {
+                if (config('reelflow.media.processing') === 'agent') {
+                    return [self::OK, 'Not needed on the server (MEDIA_PROCESSING=agent: the sync agent runs FFmpeg)'];
+                }
                 foreach (['ffmpeg_path' => '-version', 'ffprobe_path' => '-version'] as $key => $arg) {
                     $process = new Process([config("reelflow.media.$key"), $arg]);
                     $process->setTimeout(10);
@@ -108,7 +111,7 @@ class SystemCheck
             'mail' => $this->check('Email', function () use ($production) {
                 $recipients = $this->settings->recipients();
                 if (config('mail.default') === 'log' || config('mail.default') === 'array') {
-                    return [$production ? self::WARN : self::OK, 'MAIL_MAILER='.config('mail.default').' (emails are not sent) — add Gmail App Password SMTP credentials'];
+                    return [$production ? self::WARN : self::OK, 'MAIL_MAILER='.config('mail.default').' (emails are not sent) — add SMTP credentials (Gmail App Password or your hosting mailbox)'];
                 }
                 if (config('mail.default') === 'smtp' && blank(config('mail.mailers.smtp.password'))) {
                     return [self::WARN, 'SMTP password missing (MAIL_PASSWORD)'];
@@ -156,6 +159,13 @@ class SystemCheck
         ];
 
         return $checks;
+    }
+
+    private function workerFix(): string
+    {
+        return config('reelflow.queue_mode') === 'cron'
+            ? 'Workers start from the every-minute cron (schedule:run); check the cron job and the PHP path in it'
+            : 'Start Horizon (php artisan horizon) under Supervisor';
     }
 
     /**

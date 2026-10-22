@@ -28,8 +28,32 @@ from .api import (
 )
 from .config import Config
 from .hasher import HashCancelled, sha256_file
+from .media import (
+    DEFAULT_AI_FRAMES,
+    DEFAULT_FRAME_WIDTH,
+    DEFAULT_THUMBNAIL_WIDTH,
+    MAX_FRAMES,
+    MediaCancelled,
+    MediaError,
+    MediaSettings,
+    MediaToolkit,
+    MediaToolMissing,
+)
 from .scanner import PathOutsideRoot, resolve_candidate_path
-from .state import DONE, FAILED, HASHING, PENDING, REJECTED, SKIPPED, UPLOADING, FileRecord, StateDB
+from .state import (
+    DONE,
+    FAILED,
+    HASHING,
+    MEDIA_FAILED,
+    MEDIA_PENDING,
+    MEDIA_SENT,
+    PENDING,
+    REJECTED,
+    SKIPPED,
+    UPLOADING,
+    FileRecord,
+    StateDB,
+)
 
 log = logging.getLogger("reelflow_agent.uploader")
 
@@ -48,6 +72,10 @@ CHUNK_RETRIES = 3
 # Server-side processing errors (matched case-insensitively in processing_error)
 # that re-uploading the same bytes cannot fix. Anything else is retried.
 PERMANENT_SERVER_ERRORS = ("not a video",)
+# When FFmpeg is missing, look for it again this often (seconds) for pending media.
+MEDIA_TOOL_RETRY_SECONDS = 300.0
+MEDIA_AGENT = "agent"
+MEDIA_SERVER = "server"
 
 
 @dataclass(frozen=True)
@@ -55,6 +83,18 @@ class ServerConfig:
     chunk_size_bytes: int | None = None
     allowed_extensions: frozenset[str] | None = None
     max_file_size_bytes: int | None = None
+    # MEDIA_PROCESSING on the server. Older servers do not send it -> "server" (nothing to do).
+    media_processing: str = MEDIA_SERVER
+    ai_frames: int = DEFAULT_AI_FRAMES
+    frame_width: int = DEFAULT_FRAME_WIDTH
+    thumbnail_width: int = DEFAULT_THUMBNAIL_WIDTH
+
+    @property
+    def agent_media(self) -> bool:
+        return self.media_processing == MEDIA_AGENT
+
+    def media_settings(self) -> MediaSettings:
+        return MediaSettings(self.ai_frames, self.frame_width, self.thumbnail_width)
 
     @classmethod
     def from_payload(cls, payload: Any) -> "ServerConfig | None":
@@ -70,13 +110,26 @@ class ServerConfig:
             if isinstance(exts, list) and exts
             else None
         )
-        return cls(_int(payload.get("chunk_size_bytes")), allowed, _int(payload.get("max_file_size_bytes")))
+        mode = str(payload.get("media_processing") or "").strip().lower()
+        return cls(
+            _int(payload.get("chunk_size_bytes")),
+            allowed,
+            _int(payload.get("max_file_size_bytes")),
+            media_processing=MEDIA_AGENT if mode == MEDIA_AGENT else MEDIA_SERVER,
+            ai_frames=min(MAX_FRAMES, _int(payload.get("ai_frames")) or DEFAULT_AI_FRAMES),
+            frame_width=min(4096, _int(payload.get("frame_width")) or DEFAULT_FRAME_WIDTH),
+            thumbnail_width=min(4096, _int(payload.get("thumbnail_width")) or DEFAULT_THUMBNAIL_WIDTH),
+        )
 
     def to_payload(self) -> dict[str, Any]:
         return {
             "chunk_size_bytes": self.chunk_size_bytes,
             "allowed_extensions": sorted(self.allowed_extensions) if self.allowed_extensions else None,
             "max_file_size_bytes": self.max_file_size_bytes,
+            "media_processing": self.media_processing,
+            "ai_frames": self.ai_frames,
+            "frame_width": self.frame_width,
+            "thumbnail_width": self.thumbnail_width,
         }
 
     def rejection_reason(self, filename: str, size: int) -> str | None:
@@ -140,6 +193,7 @@ class Uploader:
         on_requeue: Callable[[str, str], None] | None = None,
         rng: Callable[[], float] = random.random,
         clock: Callable[[], float] = time.time,
+        media_toolkit: MediaToolkit | None = None,
     ):
         self.api = api
         self.db = db
@@ -149,6 +203,7 @@ class Uploader:
         self.on_requeue = on_requeue
         self.rng = rng
         self.clock = clock
+        self.media = media_toolkit or MediaToolkit.from_config(config)
         self._checksum_locks = KeyedLocks()
 
     # -- helpers ----------------------------------------------------------
@@ -333,6 +388,8 @@ class Uploader:
                 server_status="uploaded" if video.get("uploaded") else (video.get("status") or None),
             )
             log.info("%s already on server (video #%s); nothing to upload", key, video_id)
+            self.note_needs_media(key, video)
+            self.media_after_upload(key)
             return DONE
 
         session_id = str(upload.get("session_id") or "")
@@ -341,6 +398,7 @@ class Uploader:
         if rec.session_id and rec.session_id != session_id:
             log.info("%s: server opened a new upload session", key)
         self.db.update(key, video_id=str(video_id), session_id=session_id)
+        self.note_needs_media(key, video)
 
         final = self._send_and_complete(rec, path, upload)
         self.db.update(
@@ -348,6 +406,7 @@ class Uploader:
             server_status=str(final.get("status") or "assembling"),
         )
         log.info("uploaded %s (video #%s); server is assembling it", key, video_id)
+        self.media_after_upload(key)
         return self._poll_result(key, video_id)
 
     def _send_and_complete(self, rec: FileRecord, path: str, upload: dict[str, Any]) -> dict[str, Any]:
@@ -425,6 +484,7 @@ class Uploader:
 
     def apply_video_status(self, key: str, video: dict[str, Any]) -> str:
         """Update a finished record from the server's view of the video."""
+        self.note_needs_media(key, video)
         status = str(video.get("status") or "")
         if video.get("uploaded"):
             self.db.update(key, server_status="uploaded")
@@ -441,3 +501,129 @@ class Uploader:
             return DONE
         self.db.update(key, server_status=status or None)
         return WAITING
+
+    # -- agent-side media (MEDIA_PROCESSING=agent) ---------------------------
+
+    @property
+    def media_enabled(self) -> bool:
+        return self.server_config is not None and self.server_config.agent_media
+
+    def note_needs_media(self, key: str, video: dict[str, Any]) -> None:
+        """Track the server's ``needs_media`` flag (absent on older servers: ignored)."""
+        if not isinstance(video, dict) or "needs_media" not in video:
+            return
+        rec = self.db.get(key)
+        if rec is None:
+            return
+        if video.get("needs_media") and self.media_enabled:
+            # A failed (rejected) media upload is only retried via `retry-failed`.
+            if rec.media_status not in (MEDIA_PENDING, MEDIA_FAILED):
+                self.db.update(key, media_status=MEDIA_PENDING, media_attempts=0, media_error=None,
+                               media_next_retry_at=0)
+        elif not video.get("needs_media") and rec.media_status in (MEDIA_PENDING, MEDIA_FAILED):
+            self.db.update(key, media_status=None, media_attempts=0, media_error=None, media_next_retry_at=0)
+
+    def media_after_upload(self, key: str) -> None:
+        """First media attempt right after register/upload. Never affects the upload's own result."""
+        rec = self.db.get(key)
+        if rec is None or rec.media_status != MEDIA_PENDING or self.stop_event.is_set():
+            return
+        try:
+            self.process_media(rec)
+        except (AuthError, DeviceRevokedError, NetworkError) as e:
+            log.debug("%s: media deferred (%s)", key, e)  # state already updated; retried later
+
+    def fail_media(self, key: str, message: str, *, permanent: bool = False) -> str:
+        rec = self.db.get(key)
+        if rec is None:
+            return REMOVED
+        attempts = rec.media_attempts + 1
+        fields: dict[str, Any] = {"media_attempts": attempts, "media_error": message[:2000]}
+        if permanent or attempts > self.config.max_retries:
+            fields.update(media_status=MEDIA_FAILED, media_next_retry_at=0)
+            log.error("%s: media could not be sent%s: %s", key,
+                      "" if permanent else f" after {attempts} attempts", message)
+            status = MEDIA_FAILED
+        else:
+            base = self.config.retry_backoff_base_seconds * 15
+            cap = max(self.config.retry_backoff_max_seconds * 12, base)
+            delay = backoff_delay(max(attempts - 1, 0), base, cap, self.rng)
+            fields.update(media_status=MEDIA_PENDING, media_next_retry_at=self.clock() + delay)
+            log.warning("%s: media: %s (attempt %d/%d, next try in %.0fs)", key, message, attempts,
+                        self.config.max_retries + 1, delay)
+            status = MEDIA_PENDING
+        self.db.update(key, **fields)
+        return status
+
+    def _defer_media(self, key: str, message: str | None, delay: float) -> str:
+        self.db.update(key, media_status=MEDIA_PENDING, media_next_retry_at=self.clock() + delay,
+                       **({"media_error": message[:2000]} if message else {}))
+        return MEDIA_PENDING
+
+    def process_media(self, rec: FileRecord) -> str:
+        """Generate metadata/thumbnail/frames with local FFmpeg and upload them.
+
+        Returns the resulting media status. Like ``process``, AuthError,
+        DeviceRevokedError and NetworkError are re-raised so the caller can pause.
+        """
+        key = rec.path_key
+        rec = self.db.get(key)  # type: ignore[assignment]
+        if rec is None:
+            return REMOVED
+        if rec.media_status != MEDIA_PENDING or not rec.video_id:
+            return rec.media_status or ""
+        if not self.media_enabled:
+            return MEDIA_PENDING
+        try:
+            return self._process_media(rec)
+        except (MediaCancelled, OperationCancelled):
+            return MEDIA_PENDING
+        except MediaToolMissing as e:
+            self.media.report_missing(str(e), log)
+            return self._defer_media(key, str(e), MEDIA_TOOL_RETRY_SECONDS)
+        except (FileGone, FileChanged):
+            # The scanner forgets / re-records the file (which resets its media state).
+            return self._defer_media(key, None, MEDIA_TOOL_RETRY_SECONDS)
+        except MediaError as e:
+            return self.fail_media(key, str(e), permanent=e.permanent)
+        except (AuthError, DeviceRevokedError) as e:
+            self._defer_media(key, str(e), 0)
+            raise
+        except NetworkError as e:
+            self._defer_media(key, str(e), 30)
+            raise
+        except PathOutsideRoot as e:
+            return self.fail_media(key, f"unsafe path: {e}", permanent=True)
+        except ClientError as e:
+            if e.status in (404, 422):  # validation error / video not linked to this device
+                return self.fail_media(key, str(e), permanent=True)
+            return self.fail_media(key, str(e))
+        except TransientError as e:
+            return self.fail_media(key, str(e))
+        except OSError as e:
+            return self.fail_media(key, f"cannot read file: {describe_os_error(e)}")
+        except Exception as e:  # noqa: BLE001 - never let one file kill the agent
+            log.exception("unexpected error while creating media for %s", key)
+            return self.fail_media(key, f"internal error: {e.__class__.__name__}: {e}")
+
+    def _process_media(self, rec: FileRecord) -> str:
+        key = rec.path_key
+        folder = self.config.folder(rec.label)
+        if folder is None:
+            raise FileGone()
+        path = resolve_candidate_path(folder.path, rec.relative_path)
+        self._ensure_unchanged(path, rec)
+        settings = self.server_config.media_settings()  # type: ignore[union-attr]
+        started = time.monotonic()
+        bundle = self.media.generate(path, settings, should_stop=self.stop_event.is_set)
+        self._ensure_unchanged(path, rec)
+        body, content_type = bundle.encode()
+        resp = self._retry(lambda: self.api.post_media(rec.video_id, body, content_type), f"media {key}")
+        video = resp.get("video") if isinstance(resp.get("video"), dict) else {}
+        self.db.update(key, media_status=MEDIA_SENT, media_error=None, media_next_retry_at=0)
+        log.info("%s: sent metadata (%sx%s, %.1fs), thumbnail and %d frame(s) to video #%s in %.1fs",
+                 key, bundle.metadata["width"], bundle.metadata["height"], bundle.metadata["duration"],
+                 len(bundle.frames), rec.video_id, time.monotonic() - started)
+        if video.get("needs_media"):
+            log.warning("%s: server still reports missing media for video #%s", key, rec.video_id)
+        return MEDIA_SENT

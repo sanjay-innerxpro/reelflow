@@ -3,11 +3,13 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\AgentMediaRequest;
 use App\Http\Requests\HeartbeatRequest;
 use App\Http\Requests\RegisterVideoRequest;
 use App\Models\SyncDevice;
 use App\Models\UploadSession;
 use App\Models\Video;
+use App\Services\Media\AgentMediaService;
 use App\Services\Sync\UploadException;
 use App\Services\Sync\UploadService;
 use Illuminate\Http\JsonResponse;
@@ -36,6 +38,10 @@ class SyncController extends Controller
             'server_time' => now()->toIso8601String(),
             'device' => ['id' => $device->id, 'name' => $device->name],
             'config' => [
+                'media_processing' => config('reelflow.media.processing'),
+                'ai_frames' => config('reelflow.ai.max_frames'),
+                'frame_width' => config('reelflow.ai.frame_width'),
+                'thumbnail_width' => config('reelflow.media.agent_thumbnail_width'),
                 'chunk_size_bytes' => config('reelflow.uploads.chunk_size_mb') * 1024 * 1024,
                 'allowed_extensions' => array_values(config('reelflow.uploads.allowed_extensions')),
                 'max_file_size_bytes' => config('reelflow.uploads.max_file_size_mb') * 1024 * 1024,
@@ -51,11 +57,12 @@ class SyncController extends Controller
         ]);
 
         $videos = Video::whereIn('checksum_sha256', array_map('strtolower', $data['checksums']))
-            ->get(['id', 'checksum_sha256', 'status', 'uploaded_at'])
+            ->get()
             ->mapWithKeys(fn (Video $v) => [$v->checksum_sha256 => [
                 'video_id' => $v->id,
                 'status' => $v->status->value,
                 'uploaded' => $v->uploaded_at !== null,
+                'needs_media' => $v->needsAgentMedia(),
             ]]);
 
         return response()->json(['videos' => (object) $videos->all()]);
@@ -77,6 +84,7 @@ class SyncController extends Controller
                 'status' => $video->status->value,
                 'uploaded' => $video->uploaded_at !== null,
                 'duplicate' => $result['duplicate'],
+                'needs_media' => $video->needsAgentMedia(),
             ],
             'upload' => $result['session'] ? $this->sessionPayload($result['session']) : null,
         ], $result['duplicate'] ? 200 : 201);
@@ -91,7 +99,27 @@ class SyncController extends Controller
             'id' => $video->id,
             'status' => $video->status->value,
             'uploaded' => $video->uploaded_at !== null,
+            'needs_media' => $video->needsAgentMedia(),
             'processing_error' => $video->processing_error,
+        ]]);
+    }
+
+    /**
+     * Metadata, thumbnail and AI frames from the agent's local FFmpeg
+     * (MEDIA_PROCESSING=agent).
+     */
+    public function media(AgentMediaRequest $request, Video $video, AgentMediaService $media): JsonResponse
+    {
+        $device = $this->device($request);
+        abort_unless($video->sources()->where('sync_device_id', $device->id)->exists(), 404);
+
+        $video = $media->store($video, $request->metadata(), $request->file('thumbnail'), $request->file('frames', []));
+
+        return response()->json(['video' => [
+            'id' => $video->id,
+            'status' => $video->status->value,
+            'needs_media' => $video->needsAgentMedia(),
+            'frames' => count($video->ai_frame_keys ?? []),
         ]]);
     }
 

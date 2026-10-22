@@ -25,6 +25,14 @@ class VideoProcessor
 
     public function process(Video $video): void
     {
+        $agentMode = config('reelflow.media.processing') === 'agent';
+
+        if ($agentMode && $video->media_received_at === null) {
+            // Waiting for the sync agent to send metadata, thumbnail and frames;
+            // AgentMediaService queues processing again when they arrive.
+            return;
+        }
+
         if ($video->status !== VideoStatus::Processing) {
             $video->transitionTo(VideoStatus::Processing, ['processing_started_at' => now(), 'processing_error' => null]);
         }
@@ -35,6 +43,18 @@ class VideoProcessor
             return;
         }
 
+        if (! $agentMode && ! $this->probeOnServer($video)) {
+            return;
+        }
+
+        $this->finish($video);
+    }
+
+    /**
+     * FFmpeg on this server: metadata and thumbnail. Returns false on failure.
+     */
+    private function probeOnServer(Video $video): bool
+    {
         $local = $this->storage->downloadToTemp($video);
         $thumb = $this->storage->tempPath('jpg');
 
@@ -44,23 +64,18 @@ class VideoProcessor
             if (! $meta->hasVideo || ! $meta->width || ! $meta->height) {
                 $this->fail($video, 'No playable video stream was found.');
 
-                return;
+                return false;
             }
 
-            $min = config('reelflow.media.min_duration_seconds');
-            $max = config('reelflow.media.max_duration_seconds');
-            if ($meta->duration === null || $meta->duration < $min || $meta->duration > $max) {
-                $this->fail($video, sprintf('Duration %.1fs is outside the allowed %.0f–%.0fs range.', $meta->duration ?? 0, $min, $max));
-
-                return;
-            }
-
-            $this->media->thumbnail($local, $thumb, min(1.0, $meta->duration / 2));
-            $thumbKey = $this->storage->thumbnailKeyFor($video);
-            $stream = fopen($thumb, 'rb');
-            $this->storage->putStream($thumbKey, $stream, config('reelflow.storage.thumbnail_disk'), 'image/jpeg');
-            if (is_resource($stream)) {
-                fclose($stream);
+            if ($meta->duration !== null && $meta->duration > 0) {
+                $this->media->thumbnail($local, $thumb, min(1.0, $meta->duration / 2));
+                $thumbKey = $this->storage->thumbnailKeyFor($video);
+                $stream = fopen($thumb, 'rb');
+                $this->storage->putStream($thumbKey, $stream, config('reelflow.storage.thumbnail_disk'), 'image/jpeg');
+                if (is_resource($stream)) {
+                    fclose($stream);
+                }
+                $video->fill(['thumbnail_disk' => config('reelflow.storage.thumbnail_disk'), 'thumbnail_key' => $thumbKey]);
             }
 
             $video->fill([
@@ -71,20 +86,43 @@ class VideoProcessor
                 'video_codec' => $meta->videoCodec,
                 'audio_codec' => $meta->audioCodec,
                 'has_audio' => $meta->hasAudio,
-                'thumbnail_disk' => config('reelflow.storage.thumbnail_disk'),
-                'thumbnail_key' => $thumbKey,
-                'processed_at' => now(),
-            ]);
-            $video->validation_warnings = $this->requirements->allProblems($video) ?: null;
-            $video->save();
+                'media_source' => 'server',
+            ])->save();
+
+            return true;
         } catch (MediaToolException $e) {
             $this->fail($video, 'Media processing failed: '.$e->getMessage());
 
-            return;
+            return false;
         } finally {
             @unlink($local);
             @unlink($thumb);
         }
+    }
+
+    /**
+     * Validate the extracted metadata (from the server or the agent) and continue.
+     */
+    private function finish(Video $video): void
+    {
+        if (! $video->width || ! $video->height) {
+            $this->fail($video, 'No playable video stream was found.');
+
+            return;
+        }
+
+        $min = config('reelflow.media.min_duration_seconds');
+        $max = config('reelflow.media.max_duration_seconds');
+        $duration = $video->duration_seconds;
+        if ($duration === null || $duration < $min || $duration > $max) {
+            $this->fail($video, sprintf('Duration %.1fs is outside the allowed %.0f–%.0fs range.', $duration ?? 0, $min, $max));
+
+            return;
+        }
+
+        $video->processed_at = now();
+        $video->validation_warnings = $this->requirements->allProblems($video) ?: null;
+        $video->save();
 
         $this->afterMetadata($video);
     }

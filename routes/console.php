@@ -21,7 +21,17 @@ Schedule::command('reels:check-devices')->everyTenMinutes()->onOneServer();
 Schedule::command('reels:check-accounts')->dailyAt('02:30')->onOneServer();
 Schedule::command('reels:sync-metrics')->everySixHours()->withoutOverlapping(120)->onOneServer();
 Schedule::command('reels:cleanup')->dailyAt('03:30')->onOneServer();
-Schedule::command('horizon:snapshot')->everyFiveMinutes();
+if (config('reelflow.queue_mode') === 'cron') {
+    // Shared hosting: no daemons allowed. Each minute start one worker per
+    // lane; it exits when its queue is empty (or after ~50s of picking up
+    // work), and withoutOverlapping keeps a long upload from being doubled.
+    Schedule::command('queue:work '.config('queue.default').' --queue=notifications,default,media,ai --stop-when-empty --max-time=50 --tries=3 --timeout=900')
+        ->everyMinute()->withoutOverlapping(20)->runInBackground()->name('queue-worker-general');
+    Schedule::command('queue:work '.config('queue.long_connection').' --queue=ingest,publish-youtube,publish-instagram,publish-facebook --stop-when-empty --max-time=50 --tries=1 --timeout=3600')
+        ->everyMinute()->withoutOverlapping(70)->runInBackground()->name('queue-worker-publishing');
+} else {
+    Schedule::command('horizon:snapshot')->everyFiveMinutes();
+}
 Schedule::command('queue:prune-failed --hours=720')->daily();
 
 $summaryTime = rescue(fn () => (string) app(Settings::class)->get('notifications.daily_summary_time'), '21:30', false);

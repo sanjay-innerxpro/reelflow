@@ -13,6 +13,7 @@ Route::prefix('sync')->middleware([AuthenticateDevice::class, 'throttle:sync'])-
     Route::post('videos/lookup', [SyncController::class, 'lookup']);
     Route::post('videos', [SyncController::class, 'register']);
     Route::get('videos/{video}', [SyncController::class, 'showVideo'])->whereNumber('video');
+    Route::post('videos/{video}/media', [SyncController::class, 'media'])->whereNumber('video');
     Route::get('uploads/{session}', [SyncController::class, 'showUpload'])->whereUuid('session');
     Route::put('uploads/{session}/chunks/{index}', [SyncController::class, 'chunk'])->whereUuid('session')->whereNumber('index');
     Route::post('uploads/{session}/complete', [SyncController::class, 'complete'])->whereUuid('session');

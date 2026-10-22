@@ -17,8 +17,9 @@ from .agent import EXIT_AUTH, EXIT_CONFIG, EXIT_ERROR, EXIT_OK, EXIT_REVOKED, Ag
 from .api import ApiClient, ApiError, AuthError, DeviceRevokedError
 from .config import Config, ConfigError, load_config
 from .logging_setup import redact, setup_logging
+from .media import INSTALL_HINT, MediaToolkit
 from .scanner import FileFilter, FolderUnavailable, scan_folder
-from .state import ALL_STATUSES, InstanceLock, InstanceLockError, StateDB
+from .state import ALL_STATUSES, MEDIA_STATUSES, InstanceLock, InstanceLockError, StateDB
 from .watcher import WATCHDOG_AVAILABLE
 
 log = logging.getLogger("reelflow_agent.cli")
@@ -150,6 +151,11 @@ def cmd_scan(args: argparse.Namespace) -> int:
             _err(f"error: {summary.message}")
         parts = ", ".join(f"{k}: {v}" for k, v in sorted(summary.processed.items())) or "nothing to upload"
         _print(f"Scan finished. {summary.found} video file(s) found; {parts}.")
+        if summary.media:
+            media = ", ".join(f"{k}: {v}" for k, v in sorted(summary.media.items()))
+            _print(f"Video media (local FFmpeg): {media}.")
+            if agent.media_tools_ok is False:
+                _print(f"FFmpeg is missing. {INSTALL_HINT}.")
         if summary.still_copying:
             _print(f"{summary.still_copying} file(s) are still being copied and will be picked up next time.")
         if summary.unavailable_folders:
@@ -219,6 +225,18 @@ def cmd_status(args: argparse.Namespace) -> int:
         if by_label:
             _print("")
             _print("Per folder: " + ", ".join(f"{k}={v}" for k, v in sorted(by_label.items())))
+        server_cfg = db.meta_get("server_config") or {}
+        media_counts = db.media_counts()
+        if server_cfg.get("media_processing") == "agent" or any(media_counts.values()):
+            _print("")
+            mode = server_cfg.get("media_processing") or "server"
+            _print(f"Video media (thumbnail/metadata/AI frames via local FFmpeg; server mode: {mode}):")
+            _print("  " + ", ".join(f"{s}={media_counts[s]}" for s in MEDIA_STATUSES))
+            media_problems = db.media_problems(max(0, args.limit))
+            for rec in media_problems:
+                when = datetime.fromtimestamp(rec.updated_at).strftime("%Y-%m-%d %H:%M")
+                _print(f"  [media {rec.media_status}] {rec.label}/{rec.relative_path} ({when}, attempts "
+                       f"{rec.media_attempts}): {rec.media_error or '-'}")
         problems = db.recent_problems(max(0, args.limit))
         if problems:
             _print("")
@@ -238,7 +256,10 @@ def cmd_retry_failed(args: argparse.Namespace) -> int:
         return EXIT_OK
     with StateDB(cfg.db_path) as db:
         n = db.retry_failed(include_rejected=args.include_rejected)
+        m = db.retry_failed_media()
     _print(f"{n} file(s) reset to pending. They will be uploaded by the running agent or the next `scan`.")
+    if m:
+        _print(f"{m} file(s) with failed video media (thumbnail/frames) will be retried.")
     return EXIT_OK
 
 
@@ -266,6 +287,13 @@ def cmd_check(args: argparse.Namespace) -> int:
         ok = False
         _print(f"State dir is not writable: {e.strerror}")
 
+    toolkit = MediaToolkit.from_config(cfg)
+    ffmpeg, ffprobe = toolkit.locate()
+    for name, found in (("FFmpeg", ffmpeg), ("FFprobe", ffprobe)):
+        version = toolkit.version(found) if found else None
+        detail = f"{found}" + (f" ({version})" if version else "") if found else "NOT FOUND"
+        _print(f"{name + ':':<15}{detail}")
+
     api = _make_api(cfg)
     db_path = cfg.db_path
     try:
@@ -288,6 +316,15 @@ def cmd_check(args: argparse.Namespace) -> int:
     _print(f"Connection:    OK in {elapsed:.0f} ms - device {device.get('name')!r} (#{device.get('id')})")
     _print(f"Server limits: extensions={scfg.get('allowed_extensions')} "
            f"max_file_size={scfg.get('max_file_size_bytes')} chunk_size={scfg.get('chunk_size_bytes')}")
+    if scfg.get("media_processing") == "agent":
+        _print(f"Media:         server requires agent media (MEDIA_PROCESSING=agent): this computer creates "
+               f"metadata, thumbnails and {scfg.get('ai_frames', 6)} AI frame(s) per video with FFmpeg")
+        if not (ffmpeg and ffprobe):
+            ok = False
+            _print(f"ERROR:         {toolkit.missing_message(ffmpeg, ffprobe)}")
+    else:
+        mode = scfg.get("media_processing") or "server (not reported by this server version)"
+        _print(f"Media:         processed on the server ({mode}); FFmpeg is not needed on this computer")
     return EXIT_OK if ok else EXIT_ERROR
 
 

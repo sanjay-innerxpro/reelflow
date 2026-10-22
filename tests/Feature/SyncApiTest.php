@@ -78,7 +78,7 @@ class SyncApiTest extends TestCase
 
     public function test_full_chunked_upload_stores_file_privately_and_starts_processing(): void
     {
-        $content = random_bytes(1024 * 1024 + 500); // two chunks with 1 MB chunk size
+        $content = $this->fakeVideoBytes(1024 * 1024 + 500); // two chunks with 1 MB chunk size
         $response = $this->register($content)->assertCreated()
             ->assertJsonPath('video.duplicate', false)
             ->assertJsonPath('upload.total_chunks', 2);
@@ -102,7 +102,7 @@ class SyncApiTest extends TestCase
 
     public function test_duplicate_checksum_is_not_uploaded_twice_but_source_is_recorded(): void
     {
-        $content = random_bytes(2000);
+        $content = $this->fakeVideoBytes(2000);
         $sessionId = $this->register($content)->json('upload.session_id');
         $this->putChunk($sessionId, 0, $content)->assertOk();
         $this->api()->postJson("/api/sync/uploads/{$sessionId}/complete")->assertStatus(202);
@@ -119,7 +119,7 @@ class SyncApiTest extends TestCase
 
     public function test_interrupted_upload_resumes_with_same_session(): void
     {
-        $content = random_bytes(1024 * 1024 + 10);
+        $content = $this->fakeVideoBytes(1024 * 1024 + 10);
         $first = $this->register($content)->json('upload');
         $this->putChunk($first['session_id'], 0, substr($content, 0, 1024 * 1024))->assertOk();
 
@@ -138,7 +138,7 @@ class SyncApiTest extends TestCase
 
     public function test_chunk_with_wrong_checksum_or_size_is_rejected(): void
     {
-        $content = random_bytes(3000);
+        $content = $this->fakeVideoBytes(3000);
         $sessionId = $this->register($content)->json('upload.session_id');
 
         $this->putChunk($sessionId, 0, $content, str_repeat('a', 64))->assertStatus(422)->assertJson(['error' => 'chunk_checksum_mismatch']);
@@ -151,7 +151,7 @@ class SyncApiTest extends TestCase
         Notification::fake();
         config(['reelflow.uploads.repeated_failure_threshold' => 1]);
 
-        $content = random_bytes(2000);
+        $content = $this->fakeVideoBytes(2000);
         // Register with a checksum that does not match the bytes we send.
         $sessionId = $this->api()->postJson('/api/sync/videos', [
             'filename' => 'x.mp4', 'folder_label' => 'F', 'relative_path' => 'x.mp4',
@@ -184,7 +184,7 @@ class SyncApiTest extends TestCase
 
     public function test_device_cannot_access_another_devices_session(): void
     {
-        $sessionId = $this->register(random_bytes(100))->json('upload.session_id');
+        $sessionId = $this->register($this->fakeVideoBytes(100))->json('upload.session_id');
         [, $otherToken] = SyncDevice::issue('Other');
 
         $this->withHeaders(['Authorization' => 'Bearer '.$otherToken])->getJson("/api/sync/uploads/{$sessionId}")->assertNotFound();

@@ -1,7 +1,7 @@
 <x-layout title="Failed jobs">
     <x-slot:header>
         <h1 class="text-xl font-semibold">Failed queue jobs</h1>
-        <a href="{{ url(config('horizon.path', 'horizon')) }}" class="btn">Open Horizon ↗</a>
+        @if(config('reelflow.queue_mode') !== 'cron')<a href="{{ url(config('horizon.path', 'horizon')) }}" class="btn">Open Horizon ↗</a>@endif
     </x-slot:header>
     <p class="mb-4 text-sm text-slate-500">These are background jobs (uploads, processing, AI, emails) that exhausted their retries. Publishing failures are listed under <a class="link" href="{{ route('posts.failed') }}">Failed posts</a>.</p>
     <div class="card overflow-x-auto">

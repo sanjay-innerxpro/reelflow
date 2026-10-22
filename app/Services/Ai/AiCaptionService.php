@@ -68,19 +68,24 @@ class AiCaptionService
         $local = null;
 
         try {
-            $local = $this->storage->downloadToTemp($video);
-            $frames = $this->media->frames(
-                $local,
-                (float) $video->duration_seconds,
-                config('reelflow.ai.max_frames'),
-                config('reelflow.ai.frame_width'),
-                $workDir,
-            );
+            if (! empty($video->ai_frame_keys)) {
+                // Frames sampled by the sync agent (no FFmpeg on this server).
+                $frames = $this->storedFrames($video, $workDir);
+                $transcript = null;
+            } else {
+                $local = $this->storage->downloadToTemp($video);
+                $frames = $this->media->frames(
+                    $local,
+                    (float) $video->duration_seconds,
+                    config('reelflow.ai.max_frames'),
+                    config('reelflow.ai.frame_width'),
+                    $workDir,
+                );
+                $transcript = $this->transcribe($video, $local, $workDir);
+            }
             if ($frames === []) {
                 throw new AiProviderException('No frames could be extracted from the video.');
             }
-
-            $transcript = $this->transcribe($video, $local, $workDir);
 
             $started = microtime(true);
             $response = $provider->generate(new AiRequest(
@@ -205,6 +210,23 @@ class AiCaptionService
             $video->transitionTo(VideoStatus::Ready, [], 'Ready without AI captions: '.$error);
         }
         $this->activity->log('ai.failed', $video, $error, level: 'warning');
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function storedFrames(Video $video, string $workDir): array
+    {
+        $disk = $this->storage->disk($video->storage_disk);
+        $paths = [];
+        foreach (array_slice($video->ai_frame_keys, 0, config('reelflow.ai.max_frames')) as $i => $key) {
+            if ($disk->exists($key)) {
+                $paths[] = $path = $workDir.'/frame_'.$i.'.jpg';
+                file_put_contents($path, $disk->get($key));
+            }
+        }
+
+        return $paths;
     }
 
     private function assertWithinLimits(Video $video): void

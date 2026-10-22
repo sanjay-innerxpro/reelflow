@@ -19,7 +19,7 @@ Once a video has been uploaded, publishing runs entirely on the server. Your com
 | Need | Free choice (default) | Notes |
 |---|---|---|
 | Software | Laravel, MySQL/MariaDB, Redis, FFmpeg, Horizon, Python agent | All open source |
-| Server that runs while your PC is off | **Oracle Cloud Always Free** Arm VM (fallback: Google Cloud `e2-micro` free tier) | See [docs/DEPLOYMENT.md → Free hosting](docs/DEPLOYMENT.md#0-free-hosting). Signing up needs a card for identity checks; stay inside the Always Free shapes and set a budget alert. |
+| Server that runs while your PC is off | **Hosting you already have**: Hostinger Business or similar shared hosting ([docs/HOSTINGER.md](docs/HOSTINGER.md)), or **Oracle Cloud Always Free** (needs a card for verification) | See [docs/DEPLOYMENT.md → Free hosting](docs/DEPLOYMENT.md#0-free-hosting). Signing up needs a card for identity checks; stay inside the Always Free shapes and set a budget alert. |
 | Domain + HTTPS (Meta requires HTTPS callbacks) | **DuckDNS** subdomain + **Let's Encrypt** | Both free |
 | Video storage | **Server disk** (`VIDEO_STORAGE_DISK=videos`) | `VIDEO_CLEANUP_AFTER_DAYS` frees space once every enabled account has posted a video. Free-tier buckets (Backblaze B2, Cloudflare R2, about 10 GB) also work but bill beyond the free tier. |
 | AI captions | **Google Gemini free tier** (`AI_PROVIDER=gemini`), or **Groq free tier**, or **self-hosted Ollama** (no key, no limits, slower on CPU) | One request per video, far below free daily limits. Free tiers may use prompts to improve the provider's products. Use Ollama if that matters. `none` = write captions yourself. |
@@ -375,6 +375,8 @@ External APIs are faked in tests (`Http::fake`, a mocked PSR-18 transport for th
 
 ## 16. Deployment
 
+**Shared hosting (Hostinger Business etc.):** see **[docs/HOSTINGER.md](docs/HOSTINGER.md)**. Run `deploy/hostinger/deploy.sh` from your computer with `MEDIA_PROCESSING=agent` (FFmpeg runs in the sync agent) and `REELFLOW_QUEUE_MODE=cron` (workers are started by the every-minute cron; no Redis or Supervisor needed).
+
 **Quick install (fresh Ubuntu 24.04 VM, e.g. Oracle Always Free):**
 
 ```bash
@@ -393,7 +395,7 @@ The installer sets up PHP 8.3, MySQL, Redis, FFmpeg, nginx with a Let's Encrypt 
 
 See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the full Ubuntu VPS guide: packages, MySQL, Redis, FFmpeg, nginx and HTTPS, Supervisor or systemd, cron, backups, log rotation, deploy and rollback. Ready-to-edit files are in [`deploy/`](deploy).
 
-Shared hosting is **not** suitable, because ReelFlow needs persistent queue workers, cron every minute, Redis and FFmpeg. The free path is an **Oracle Cloud Always Free** VM; see [Free hosting](docs/DEPLOYMENT.md#0-free-hosting). A small VM easily handles dozens of posts per day. On 1 GB RAM machines, set `HORIZON_GENERAL_PROCESSES=1` and `HORIZON_PUBLISHING_PROCESSES=1`, add swap, and use Gemini or Groq rather than Ollama.
+Shared hosting works in the adapted modes above, as long as it offers SSH, a per-minute cron, PHP 8.2+ and MySQL. The free path is an **Oracle Cloud Always Free** VM; see [Free hosting](docs/DEPLOYMENT.md#0-free-hosting). A small VM easily handles dozens of posts per day. On 1 GB RAM machines, set `HORIZON_GENERAL_PROCESSES=1` and `HORIZON_PUBLISHING_PROCESSES=1`, add swap, and use Gemini or Groq rather than Ollama.
 
 ---
 

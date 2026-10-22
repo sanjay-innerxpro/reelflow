@@ -332,6 +332,12 @@ class ApiClient:
     def get_video(self, video_id: Any) -> dict[str, Any]:
         return self.request("GET", f"/api/sync/videos/{self._seg(video_id)}")[1]
 
+    def post_media(self, video_id: Any, body: bytes, content_type: str) -> dict[str, Any]:
+        """Upload agent-generated metadata/thumbnail/frames (multipart/form-data body)."""
+        return self.request(
+            "POST", f"/api/sync/videos/{self._seg(video_id)}/media", data=body, headers={"Content-Type": content_type}
+        )[1]
+
 
 def server_time_skew(server_time: str | None) -> float | None:
     """Seconds the local clock is ahead of the server (None if unknown)."""

@@ -51,7 +51,7 @@ return [
         // only through short-lived signed URLs (/private-media/...).
         'videos' => [
             'driver' => 'local',
-            'root' => env('VIDEO_LOCAL_ROOT', storage_path('app/private/videos')),
+            'root' => env('VIDEO_LOCAL_ROOT') ?: storage_path('app/private/videos'),
             'url' => rtrim(env('APP_URL', 'http://localhost'), '/').'/private-media',
             'serve' => true,
             'visibility' => 'private',
@@ -66,9 +66,9 @@ return [
             'secret' => env('AWS_SECRET_ACCESS_KEY'),
             'region' => env('AWS_DEFAULT_REGION'),
             'bucket' => env('AWS_BUCKET'),
-            'endpoint' => env('AWS_ENDPOINT'),
+            'endpoint' => env('AWS_ENDPOINT') ?: null,
             'use_path_style_endpoint' => env('AWS_USE_PATH_STYLE_ENDPOINT', false),
-            'root' => env('AWS_VIDEO_PREFIX', 'videos'),
+            'root' => env('AWS_VIDEO_PREFIX') ?: 'videos',
             'visibility' => 'private',
             'throw' => true,
             'report' => false,

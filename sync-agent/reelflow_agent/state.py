@@ -23,7 +23,13 @@ SKIPPED = "skipped"
 ALL_STATUSES = (PENDING, HASHING, UPLOADING, DONE, FAILED, REJECTED, SKIPPED)
 ACTIVE_STATUSES = (PENDING, HASHING, UPLOADING)
 
-SCHEMA_VERSION = 1
+# media_status (MEDIA_PROCESSING=agent servers): NULL = nothing to send.
+MEDIA_PENDING = "pending"
+MEDIA_SENT = "sent"
+MEDIA_FAILED = "failed"
+MEDIA_STATUSES = (MEDIA_PENDING, MEDIA_SENT, MEDIA_FAILED)
+
+SCHEMA_VERSION = 2
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS files (
     path_key         TEXT PRIMARY KEY,
@@ -41,7 +47,11 @@ CREATE TABLE IF NOT EXISTS files (
     last_error       TEXT,
     next_retry_at    REAL NOT NULL DEFAULT 0,
     created_at       REAL NOT NULL,
-    updated_at       REAL NOT NULL
+    updated_at       REAL NOT NULL,
+    media_status     TEXT,
+    media_attempts   INTEGER NOT NULL DEFAULT 0,
+    media_error      TEXT,
+    media_next_retry_at REAL NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_files_status ON files(status, next_retry_at);
 CREATE INDEX IF NOT EXISTS idx_files_sha ON files(sha256);
@@ -52,9 +62,19 @@ CREATE TABLE IF NOT EXISTS meta (
 );
 """
 
+# Columns added after schema version 1 (ALTER TABLE ... ADD COLUMN for old state DBs).
+_MIGRATED_COLUMNS = (
+    ("media_status", "TEXT"),
+    ("media_attempts", "INTEGER NOT NULL DEFAULT 0"),
+    ("media_error", "TEXT"),
+    ("media_next_retry_at", "REAL NOT NULL DEFAULT 0"),
+)
+_POST_MIGRATION = "CREATE INDEX IF NOT EXISTS idx_files_media ON files(media_status, media_next_retry_at);"
+
 _UPDATABLE = {
     "size", "mtime_ns", "sha256", "status", "video_id", "session_id", "stale_session_id",
     "server_status", "attempts", "last_error", "next_retry_at",
+    "media_status", "media_attempts", "media_error", "media_next_retry_at",
 }
 
 
@@ -76,6 +96,10 @@ class FileRecord:
     next_retry_at: float
     created_at: float
     updated_at: float
+    media_status: str | None = None
+    media_attempts: int = 0
+    media_error: str | None = None
+    media_next_retry_at: float = 0.0
 
     @classmethod
     def from_row(cls, row: sqlite3.Row) -> "FileRecord":
@@ -100,7 +124,16 @@ class StateDB:
             self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.execute("PRAGMA synchronous=NORMAL")
             self._conn.executescript(_SCHEMA)
+            self._migrate()
             self._conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+
+    def _migrate(self) -> None:
+        """Bring a state DB written by an older agent up to the current schema (idempotent)."""
+        have = {row[1] for row in self._conn.execute("PRAGMA table_info(files)")}
+        for name, decl in _MIGRATED_COLUMNS:
+            if name not in have:
+                self._conn.execute(f"ALTER TABLE files ADD COLUMN {name} {decl}")
+        self._conn.executescript(_POST_MIGRATION)
 
     def close(self) -> None:
         with self._lock:
@@ -179,7 +212,8 @@ class StateDB:
             self._conn.execute(
                 "UPDATE files SET size = ?, mtime_ns = ?, sha256 = NULL, status = ?, video_id = NULL,"
                 " session_id = NULL, stale_session_id = ?, server_status = NULL, attempts = 0, last_error = NULL,"
-                " next_retry_at = 0, updated_at = ? WHERE path_key = ?",
+                " next_retry_at = 0, media_status = NULL, media_attempts = 0, media_error = NULL,"
+                " media_next_retry_at = 0, updated_at = ? WHERE path_key = ?",
                 (size, mtime_ns, PENDING, stale, now, key),
             )
             return self.get(key), True  # type: ignore[return-value]
@@ -273,6 +307,74 @@ class StateDB:
                 (PENDING, self.clock(), SKIPPED),
             )
             return cur.rowcount
+
+    # -- agent-side media (MEDIA_PROCESSING=agent) ---------------------------
+
+    def media_due(self, now: float | None = None, *, limit: int = 10, exclude: Iterable[str] = ()) -> list[FileRecord]:
+        """Uploaded/registered files whose media should be (re)sent now."""
+        now = self.clock() if now is None else now
+        excluded = set(exclude)
+        out: list[FileRecord] = []
+        for rec in self._many(
+            "SELECT * FROM files WHERE media_status = ? AND media_next_retry_at <= ? AND status = ?"
+            " AND video_id IS NOT NULL ORDER BY media_next_retry_at, created_at",
+            (MEDIA_PENDING, now, DONE),
+        ):
+            if rec.path_key in excluded:
+                continue
+            out.append(rec)
+            if len(out) >= limit:
+                break
+        return out
+
+    def media_sweep_candidates(self) -> list[FileRecord]:
+        """Finished files the server may still need media for (e.g. after it switched to agent mode)."""
+        return self._many(
+            "SELECT * FROM files WHERE status = ? AND sha256 IS NOT NULL"
+            " AND (media_status IS NULL OR media_status = ?) ORDER BY path_key",
+            (DONE, MEDIA_SENT),
+        )
+
+    def clear_pending_media(self) -> int:
+        """The server no longer wants agent media (switched back to MEDIA_PROCESSING=server)."""
+        with self._lock:
+            cur = self._conn.execute(
+                "UPDATE files SET media_status = NULL, media_attempts = 0, media_error = NULL,"
+                " media_next_retry_at = 0, updated_at = ? WHERE media_status = ?",
+                (self.clock(), MEDIA_PENDING),
+            )
+            return cur.rowcount
+
+    def retry_failed_media(self) -> int:
+        with self._lock:
+            cur = self._conn.execute(
+                "UPDATE files SET media_status = ?, media_attempts = 0, media_error = NULL, media_next_retry_at = 0,"
+                " updated_at = ? WHERE media_status = ?",
+                (MEDIA_PENDING, self.clock(), MEDIA_FAILED),
+            )
+            return cur.rowcount
+
+    def media_counts(self) -> dict[str, int]:
+        result = {s: 0 for s in MEDIA_STATUSES}
+        with self._lock:
+            for status, n in self._conn.execute(
+                "SELECT media_status, COUNT(*) FROM files WHERE media_status IS NOT NULL GROUP BY media_status"
+            ):
+                result[status] = n
+        return result
+
+    def media_problems(self, limit: int = 10) -> list[FileRecord]:
+        return self._many(
+            "SELECT * FROM files WHERE media_error IS NOT NULL AND media_status IN (?, ?)"
+            " ORDER BY updated_at DESC LIMIT ?",
+            (MEDIA_PENDING, MEDIA_FAILED, limit),
+        )
+
+    def last_media_error(self) -> str | None:
+        rows = self.media_problems(1)
+        if not rows:
+            return None
+        return f"{rows[0].label}/{rows[0].relative_path}: media: {rows[0].media_error}"
 
     # -- reporting --------------------------------------------------------
 

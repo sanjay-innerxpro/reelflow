@@ -23,6 +23,17 @@ trait BuildsFixtures
         $this->app->instance(MediaToolkit::class, $this->media);
     }
 
+    /**
+     * Bytes that file-type sniffing recognises as MP4. Pure random bytes are
+     * occasionally detected as another type (≈1%), which made tests flaky.
+     */
+    protected function fakeVideoBytes(int $length): string
+    {
+        $header = "\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom";
+
+        return $header.random_bytes(max(0, $length - strlen($header)));
+    }
+
     protected function readyVideo(array $attributes = [], bool $withFile = true): Video
     {
         $video = Video::factory()->create($attributes);

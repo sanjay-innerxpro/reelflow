@@ -28,9 +28,10 @@ from .api import (
 )
 from .config import Config, FolderConfig
 from .logging_setup import redact
+from .media import MediaToolkit
 from .scanner import FileFilter, FolderUnavailable, scan_folder, stat_candidate
 from .stability import StabilityTracker, is_readable
-from .state import ACTIVE_STATUSES, FAILED, StateDB
+from .state import ACTIVE_STATUSES, FAILED, MEDIA_PENDING, MEDIA_SENT, StateDB
 from .uploader import ServerConfig, Uploader
 from .watcher import WATCHDOG_AVAILABLE, FolderWatcher
 
@@ -44,6 +45,8 @@ EXIT_AUTH = 4
 
 NETWORK_PAUSE_SECONDS = 30.0
 MAX_AUTH_BACKOFF = 900.0
+# In agent media mode, ask the server (lookup) which finished files still need media this often.
+MEDIA_SWEEP_INTERVAL = 3600.0
 
 
 def platform_string() -> str:
@@ -57,6 +60,7 @@ class ScanSummary:
     found: int = 0
     still_copying: int = 0
     processed: dict[str, int] = field(default_factory=dict)
+    media: dict[str, int] = field(default_factory=dict)
     unavailable_folders: list[str] = field(default_factory=list)
     message: str = ""
 
@@ -72,6 +76,7 @@ class Agent:
         clock: Callable[[], float] = time.monotonic,
         wall_clock: Callable[[], float] = time.time,
         rng: Callable[[], float] = random.random,
+        media_toolkit: MediaToolkit | None = None,
     ):
         self.config = config
         self.db = db
@@ -95,6 +100,9 @@ class Agent:
         self.auth_failed = False
         self.paused_until = 0.0
         self.exit_code = EXIT_OK
+        self.media = media_toolkit or MediaToolkit.from_config(config)
+        self.media_tools_ok: bool | None = None
+        self._media_sweep_at = 0.0
         self.uploader = (
             Uploader(
                 api,
@@ -105,6 +113,7 @@ class Agent:
                 on_requeue=self._requeue,
                 rng=rng,
                 clock=wall_clock,
+                media_toolkit=self.media,
             )
             if api is not None
             else None
@@ -253,8 +262,13 @@ class Agent:
             "folders": [{"label": f.label, "files": by_label.get(f.label, 0)} for f in self.config.folders],
             "pending": sum(counts[s] for s in ACTIVE_STATUSES),
             "failed": counts[FAILED],
-            "last_error": self.sanitize_for_server(self.db.last_error()),
+            "last_error": self.sanitize_for_server(self._last_error()),
         }
+
+    def _last_error(self) -> str | None:
+        if self.media_required and self.media_tools_ok is False:
+            return self.media.missing_message()
+        return self.db.last_error() or (self.db.last_media_error() if self.media_required else None)
 
     def heartbeat(self) -> dict[str, Any]:
         """Send a heartbeat and apply the server's upload limits. Raises ApiError."""
@@ -274,6 +288,9 @@ class Agent:
                 n = self.db.requeue_skipped()
                 if n:
                     log.info("server limits changed; re-checking %d skipped file(s)", n)
+            previous_mode = self.server_config.media_processing if self.server_config is not None else None
+            if cfg.media_processing != previous_mode:
+                self._media_mode_changed(cfg)
             self.server_config = cfg
             if self.uploader is not None:
                 self.uploader.server_config = cfg
@@ -287,7 +304,82 @@ class Agent:
             log.info("device token accepted again; resuming uploads")
         self.heartbeat_ok = True
         self.auth_failed = False
+        if self.media_required:
+            self.media_tools_ok = self.media.check_available(log)
         return resp
+
+    # -- agent-side media (MEDIA_PROCESSING=agent) ---------------------------
+
+    @property
+    def media_required(self) -> bool:
+        return self.server_config is not None and self.server_config.agent_media
+
+    def _media_mode_changed(self, cfg: ServerConfig) -> None:
+        if cfg.agent_media:
+            log.info("server uses MEDIA_PROCESSING=agent: this computer creates metadata, thumbnails and %d AI "
+                     "frame(s) per video with local FFmpeg", cfg.ai_frames)
+            self._media_sweep_at = 0.0  # ask the server which earlier uploads still need media
+        else:
+            n = self.db.clear_pending_media()
+            if n:
+                log.info("server processes media itself again; %d pending media upload(s) cancelled", n)
+
+    def media_ready(self) -> bool:
+        """Agent media is required and FFmpeg is available (logs one clear error if it is not)."""
+        if not self.media_required or self.uploader is None:
+            return False
+        self.media_tools_ok = self.media.check_available(log)
+        return self.media_tools_ok
+
+    def media_sweep(self, force: bool = False) -> int:
+        """Ask the server which finished files still need media (e.g. it switched to agent mode)."""
+        if not self.media_required or self.uploader is None or not self.can_upload():
+            return 0
+        now = self.clock()
+        if not force and now < self._media_sweep_at:
+            return 0
+        recs = self.db.media_sweep_candidates()
+        if not recs:
+            self._media_sweep_at = now + MEDIA_SWEEP_INTERVAL
+            return 0
+        try:
+            found = self.api.lookup(r.sha256 for r in recs if r.sha256)  # type: ignore[union-attr]
+        except ApiError as e:
+            log.debug("media lookup failed: %s", e)
+            self._media_sweep_at = now + min(MEDIA_SWEEP_INTERVAL, self.config.scan_interval_seconds * 5)
+            return 0
+        self._media_sweep_at = now + MEDIA_SWEEP_INTERVAL
+        marked = 0
+        for rec in recs:
+            entry = found.get(rec.sha256 or "")
+            if not isinstance(entry, dict) or not entry.get("needs_media"):
+                continue
+            fields = {"media_status": MEDIA_PENDING, "media_attempts": 0, "media_error": None,
+                      "media_next_retry_at": 0}
+            if not rec.video_id and entry.get("video_id") is not None:
+                fields["video_id"] = str(entry["video_id"])
+            self.db.update(rec.path_key, **fields)
+            marked += 1
+        if marked:
+            log.info("%d already uploaded video(s) still need metadata/thumbnail/frames from this computer", marked)
+        return marked
+
+    def process_media_once(self, limit: int = 1000) -> dict[str, int]:
+        """Send all pending media once (ignores retry times). Used by `scan`."""
+        results: dict[str, int] = {}
+        if not self.media_required or self.uploader is None:
+            return results
+        if not self.media_ready():
+            pending = len(self.db.media_due(math.inf, limit=limit))
+            if pending:
+                results[MEDIA_PENDING] = pending
+            return results
+        for rec in self.db.media_due(math.inf, limit=limit):
+            if self.stop_event.is_set():
+                break
+            outcome = self.uploader.process_media(rec)
+            results[outcome] = results.get(outcome, 0) + 1
+        return results
 
     def verify_done(self, limit: int = 20) -> None:
         """Ask the server about uploads that finished but were not yet confirmed."""
@@ -340,6 +432,11 @@ class Agent:
         for rec in self.db.due(self.wall_clock(), limit=free, exclude=self._inflight.keys()):
             self._inflight[rec.path_key] = executor.submit(self.uploader.process, rec)  # type: ignore[union-attr]
             submitted += 1
+        free -= submitted
+        if free > 0 and self.media_required and self.db.media_due(self.wall_clock(), limit=1) and self.media_ready():
+            for rec in self.db.media_due(self.wall_clock(), limit=free, exclude=self._inflight.keys()):
+                self._inflight[rec.path_key] = executor.submit(self.uploader.process_media, rec)  # type: ignore[union-attr]
+                submitted += 1
         return submitted
 
     # -- modes ------------------------------------------------------------
@@ -399,6 +496,7 @@ class Agent:
                     self._rescan.clear()
                     self.full_scan()
                     self.verify_done()
+                    self.media_sweep()
                     next_scan = now + cfg.scan_interval_seconds
 
                 self.drain_events()
@@ -482,6 +580,15 @@ class Agent:
         summary.processed = processed
         if summary.exit_code == EXIT_OK:
             self.verify_done()
+            if self.media_required:
+                try:
+                    self.media_sweep(force=True)
+                    summary.media = self.process_media_once()
+                except (AuthError, DeviceRevokedError, NetworkError) as e:
+                    self._handle_worker_error("media", e)
+                    summary.message = str(e)
+                    summary.exit_code = (EXIT_REVOKED if isinstance(e, DeviceRevokedError)
+                                         else EXIT_AUTH if isinstance(e, AuthError) else EXIT_ERROR)
             try:
                 self.heartbeat()  # report the new counts
             except ApiError:

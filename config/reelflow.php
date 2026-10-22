@@ -11,6 +11,13 @@ return [
     */
     'display_timezone' => env('REELFLOW_TIMEZONE', 'Asia/Kolkata'),
 
+    /*
+    | horizon: Redis + Laravel Horizon workers kept alive by Supervisor (VPS).
+    | cron:    no persistent processes (shared hosting): the every-minute cron
+    |          starts queue workers that exit when the queue is empty.
+    */
+    'queue_mode' => env('REELFLOW_QUEUE_MODE', 'horizon'),
+
     'admin_email' => env('REELFLOW_ADMIN_EMAIL'),
 
     // Shown on the public privacy/terms pages required by Meta and Google.
@@ -54,6 +61,12 @@ return [
     |--------------------------------------------------------------------------
     */
     'media' => [
+        // server: FFmpeg runs on this server (VPS).
+        // agent:  the sync agent runs FFmpeg on your computer and uploads metadata,
+        //         thumbnail and AI frames — for shared hosting without FFmpeg.
+        'processing' => env('MEDIA_PROCESSING', 'server'),
+        'agent_thumbnail_width' => 480,
+        'agent_max_upload_kb' => 2048,
         'ffmpeg_path' => env('FFMPEG_PATH', 'ffmpeg'),
         'ffprobe_path' => env('FFPROBE_PATH', 'ffprobe'),
         'timeout_seconds' => (int) env('FFMPEG_TIMEOUT', 300),

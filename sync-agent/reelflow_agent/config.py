@@ -71,6 +71,9 @@ class Config:
     use_watchdog: bool = True
     completion_poll_attempts: int = 3
     completion_poll_interval_seconds: float = 2.0
+    ffmpeg_path: str | None = None
+    ffprobe_path: str | None = None
+    ffmpeg_timeout_seconds: float = 300.0
     config_path: Path | None = None
     warnings: list[str] = field(default_factory=list)
 
@@ -187,8 +190,24 @@ _KNOWN_KEYS = {
     "heartbeat_interval_seconds", "max_concurrent_uploads", "max_retries", "retry_backoff_base_seconds",
     "retry_backoff_max_seconds", "state_dir", "log_dir", "log_level", "log_max_bytes", "log_backup_count",
     "request_timeout_seconds", "verify_tls", "use_watchdog", "completion_poll_attempts",
-    "completion_poll_interval_seconds",
+    "completion_poll_interval_seconds", "ffmpeg_path", "ffprobe_path", "ffmpeg_timeout_seconds",
 }
+
+
+def _tool_path(data: Mapping[str, Any], key: str, base: Path) -> str | None:
+    """Optional ffmpeg/ffprobe location: a bare command name (looked up on PATH) or a file path."""
+    value = data.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str) or "\x00" in value:
+        raise ConfigError(f"{key} must be a string (path to the executable, or a command name on PATH)")
+    value = value.strip()
+    if not value:
+        return None
+    expanded = os.path.expandvars(os.path.expanduser(value))
+    if os.path.isabs(expanded) or "/" in expanded or "\\" in expanded:
+        return str(_expand_path(expanded, base))
+    return expanded
 
 
 def parse_config_data(
@@ -310,6 +329,9 @@ def parse_config_data(
         use_watchdog=_bool(data, "use_watchdog", True),
         completion_poll_attempts=_num(data, "completion_poll_attempts", 3, minimum=0, maximum=100, integer=True),
         completion_poll_interval_seconds=_num(data, "completion_poll_interval_seconds", 2, minimum=0, maximum=600),
+        ffmpeg_path=_tool_path(data, "ffmpeg_path", base_dir),
+        ffprobe_path=_tool_path(data, "ffprobe_path", base_dir),
+        ffmpeg_timeout_seconds=_num(data, "ffmpeg_timeout_seconds", 300, minimum=5, maximum=7200),
         warnings=warnings,
     )
     return cfg

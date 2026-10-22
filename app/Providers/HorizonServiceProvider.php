@@ -24,6 +24,7 @@ class HorizonServiceProvider extends HorizonApplicationServiceProvider
      */
     protected function gate(): void
     {
-        Gate::define('viewHorizon', fn (?User $user = null) => $user !== null);
+        // Horizon needs Redis; in cron queue mode (shared hosting) it is unused.
+        Gate::define('viewHorizon', fn (?User $user = null) => $user !== null && config('reelflow.queue_mode') !== 'cron');
     }
 }
