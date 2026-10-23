@@ -33,6 +33,8 @@ Paid options still exist in the code (`AI_PROVIDER=openai|anthropic`, S3 beyond 
 
 ---
 
+Using ReelFlow rather than installing it? Read **[docs/USER-GUIDE.md](docs/USER-GUIDE.md)** — the same guide is in the app under *User guide*.
+
 ## Contents
 
 0. [Zero-cost setup](#zero-cost-setup)
@@ -225,11 +227,12 @@ Optional transcription: set `TRANSCRIPTION_PROVIDER=groq` (free-tier Whisper) or
 How it works:
 
 1. FFmpeg samples `AI_MAX_FRAMES` frames evenly across the video.
-2. The versioned system prompt (`resources/prompts/caption_system_v1.txt`, or your custom prompt from AI settings) and the measured facts (duration, resolution, audio) are sent with the frames. The file name, folder and transcript are passed as untrusted data inside delimiters.
-3. The response is validated against a strict schema (`CaptionPrompt::schema()` and `CaptionValidator`). Hashtags are normalised, the Instagram hashtag count is capped (`INSTAGRAM_MAX_HASHTAGS`, default 5), YouTube titles are trimmed to 100 characters with `<` and `>` removed, and YouTube tags are kept under 500 characters.
-4. Results below `AI_LOW_CONFIDENCE_THRESHOLD` are marked `low_confidence` and are never auto-published. Review and approve them first.
-5. Each run records provider, model, prompt version, tokens, duration and estimated cost (when `AI_*_COST_PER_MTOK` are set). `AI_DAILY_BUDGET_USD` stops generation for the rest of the day once the budget is spent.
-6. Regenerating creates new caption rows and keeps the old ones as history. Retries reuse the same generation ID, so they never duplicate records.
+2. The versioned system prompt (`resources/prompts/caption_system_v2.txt`, selected by `AI_PROMPT_VERSION`, or your custom prompt from AI settings) and the measured facts (duration, resolution, audio) are sent with the frames. The file name, folder and transcript are passed as untrusted data inside delimiters.
+3. The response is repaired into the schema where it can be (`CaptionShapeRepair`: a wrapper object, per-platform sub-objects, camelCase or aliased keys, hashtags as one string, a confidence of `85`, `8` or `"high"`, JSON wrapped in prose), then validated (`CaptionPrompt::schema()` and `CaptionValidator`). Every repair is recorded on the result so you can see what was changed. Hashtags are normalised, the Instagram hashtag count is capped (`INSTAGRAM_MAX_HASHTAGS`, default 5), YouTube titles are trimmed to 100 characters with `<` and `>` removed, and YouTube tags are kept under 500 characters.
+4. An answer that is still unusable — or that covers only some platforms — is sent back to the model once with the exact problem (`AI_REPAIR_ATTEMPTS`, default 1); the best answer of the two is kept. What the model returned is stored on the generation (`raw_output`) and shown under **Admin → Overview**, so a failure can be diagnosed afterwards.
+5. Results below `AI_LOW_CONFIDENCE_THRESHOLD` are marked `low_confidence` and are never auto-published. Review and approve them first.
+6. Each run records provider, model, prompt version, tokens, duration and estimated cost (when `AI_*_COST_PER_MTOK` are set). `AI_DAILY_BUDGET_USD` stops generation for the rest of the day once the budget is spent.
+7. Regenerating creates new caption rows and keeps the old ones as history. Retries reuse the same generation ID, so they never duplicate records.
 
 AI improves relevance and consistency; it does not promise reach.
 

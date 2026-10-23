@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AccountController;
+use App\Http\Controllers\Admin\OverviewController as AdminOverviewController;
 use App\Http\Controllers\Admin\UserController as AdminUserController;
 use App\Http\Controllers\AiContentController;
 use App\Http\Controllers\AnalyticsController;
@@ -113,8 +114,11 @@ Route::middleware(['auth', 'auth.session', 'workspace'])->group(function () {
 
     Route::get('analytics', AnalyticsController::class)->name('analytics');
 
+    Route::view('guide', 'guide')->name('guide');
+
     // Super-admin
     Route::prefix('admin')->name('admin.')->middleware('admin')->group(function () {
+        Route::get('/', AdminOverviewController::class)->name('overview');
         Route::get('users', [AdminUserController::class, 'index'])->name('users.index');
         Route::get('users/create', [AdminUserController::class, 'create'])->name('users.create');
         Route::post('users', [AdminUserController::class, 'store'])->name('users.store');

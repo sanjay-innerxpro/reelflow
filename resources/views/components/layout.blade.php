@@ -33,10 +33,12 @@
             ['AI settings', 'settings.ai', 'settings.ai', 'sparkles'],
             ['Email settings', 'settings.email', 'settings.email', 'envelope'],
             ['Activity log', 'logs.index', 'logs.index', 'list'],
+            ['User guide', 'guide', 'guide', 'book'],
         ],
     ];
     if ($user->isAdmin()) {
         $nav['Admin'] = [
+            ['Overview', 'admin.overview', 'admin.overview', 'chart'],
             ['Users', 'admin.users.index', 'admin.users.*', 'users'],
             ['Failed jobs', 'logs.failed-jobs', 'logs.failed-jobs', 'alert'],
         ];
@@ -83,10 +85,10 @@
             </div>
         @endif
 
-        <nav class="flex-1 space-y-5 overflow-y-auto px-3 py-2">
+        <nav class="flex-1 space-y-4 overflow-y-auto px-3 py-1">
             @foreach($nav as $section => $items)
                 <div>
-                    <div class="px-2.5 pb-1.5 text-[11px] font-semibold tracking-wider text-slate-400 uppercase">{{ $section }}</div>
+                    <div class="px-2.5 pb-1 text-[11px] font-semibold tracking-wider text-slate-400 uppercase">{{ $section }}</div>
                     <ul class="space-y-0.5">
                         @foreach($items as [$label, $route, $pattern, $icon])
                             <li>
@@ -129,7 +131,7 @@
     </aside>
 
     <main class="lg:pl-64">
-        <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+        <div class="mx-auto max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8 lg:py-7">
             @isset($header)
                 <div class="page-header mb-6 flex flex-wrap items-center justify-between gap-3">{{ $header }}</div>
             @endisset

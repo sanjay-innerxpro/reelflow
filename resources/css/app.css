@@ -152,8 +152,41 @@
     .link { @apply font-medium text-indigo-600 hover:text-indigo-700 hover:underline dark:text-indigo-400 dark:hover:text-indigo-300; }
     .page-header h1 { @apply text-2xl font-semibold tracking-tight text-slate-900; }
     .brand-gradient { @apply bg-linear-to-br from-indigo-500 via-indigo-600 to-fuchsia-500; }
-    .nav-link { @apply flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900; }
+    .nav-link { @apply flex items-center gap-3 rounded-lg px-2.5 py-1.5 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900; }
     .nav-link[aria-current='page'] { @apply bg-indigo-50 text-indigo-700 hover:bg-indigo-50; }
-    .nav-link svg { @apply h-5 w-5 shrink-0 text-slate-400; }
+    .nav-link svg { @apply h-[18px] w-[18px] shrink-0 text-slate-400; }
     .nav-link[aria-current='page'] svg { @apply text-indigo-600; }
+}
+
+/* Charts ---------------------------------------------------------------------
+   Inline SVG only: no chart library, nothing loaded from a CDN. The dark steps
+   are chosen for the dark surface rather than flipped from the light ones —
+   both sets are validated for colour-vision separation against their surface. */
+@layer components {
+    :root {
+        --chart-good: #10b981;
+        --chart-warn: #f59e0b;
+        --chart-bad: #ef4444;
+        --chart-magnitude: #8b5cf6;
+    }
+    .dark {
+        --chart-good: #059669;
+        --chart-warn: #c08605;
+        --chart-bad: #e11d48;
+        --chart-magnitude: #7c3aed;
+    }
+    .mark-good { fill: var(--chart-good); }
+    .mark-warn { fill: var(--chart-warn); }
+    .mark-bad { fill: var(--chart-bad); }
+    .mark-magnitude { fill: var(--chart-magnitude); }
+    .swatch { @apply inline-block h-2.5 w-2.5 shrink-0 rounded-[3px] align-middle; }
+    .swatch-good { background: var(--chart-good); }
+    .swatch-warn { background: var(--chart-warn); }
+    .swatch-bad { background: var(--chart-bad); }
+
+    .chart-axis { @apply fill-slate-500 text-[10px]; }
+    .chart-grid { @apply stroke-slate-200; }
+    .chart-track { @apply fill-slate-100; }
+    .chart-hit { @apply fill-transparent; }
+    .chart-col:hover .chart-hit { fill: color-mix(in oklab, currentColor 8%, transparent); }
 }
