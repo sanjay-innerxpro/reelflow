@@ -198,6 +198,8 @@ Ubuntu (systemd user service) and Windows (Task Scheduler) setup is covered in `
 
 What the server receives: the folder **label** and the **path relative to that folder**, never an absolute local path. A video keeps its folder structure as its library folder, for example `Cooking/recipes`. Duplicate files are uploaded once, and each copy is recorded as a source. Revoking a device in the dashboard stops it immediately.
 
+**Without a computer: Google Drive import.** Under **Setup → Google Drive import**, add a Drive folder that is shared as *Anyone with the link*. Every 5 minutes the server checks it and downloads new videos itself (`reels:import-drive`). Each file is downloaded once, and content that is already in the library is detected by checksum. This requires FFmpeg on the server (`MEDIA_PROCESSING=server`). On Hostinger, see [docs/HOSTINGER.md](docs/HOSTINGER.md#5b-no-computer-at-all-ffmpeg-on-the-server--google-drive-import).
+
 ---
 
 ## 7. AI provider configuration

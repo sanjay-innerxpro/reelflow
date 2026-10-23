@@ -56,6 +56,21 @@ return [
     ],
 
     /*
+    | Google Drive import: the server downloads videos from Drive folders shared
+    | as "Anyone with the link" — no computer or sign-in needed. With a free
+    | Google Cloud API key (Drive API enabled) the official Drive API is used
+    | for listing and downloads instead of the public folder page.
+    */
+    'drive' => [
+        'api_key' => env('GOOGLE_DRIVE_API_KEY') ?: null,
+        'batch' => is_numeric(env('DRIVE_IMPORT_BATCH')) ? (int) env('DRIVE_IMPORT_BATCH') : 40,
+        'max_seconds' => is_numeric(env('DRIVE_IMPORT_MAX_SECONDS')) ? (int) env('DRIVE_IMPORT_MAX_SECONDS') : 240,
+        'list_every_minutes' => is_numeric(env('DRIVE_LIST_EVERY_MINUTES')) ? (int) env('DRIVE_LIST_EVERY_MINUTES') : 30,
+        'max_attempts' => 3,
+        'timeout' => 600,
+    ],
+
+    /*
     |--------------------------------------------------------------------------
     | Media tooling
     |--------------------------------------------------------------------------
@@ -67,8 +82,8 @@ return [
         'processing' => env('MEDIA_PROCESSING', 'server'),
         'agent_thumbnail_width' => 480,
         'agent_max_upload_kb' => 2048,
-        'ffmpeg_path' => env('FFMPEG_PATH', 'ffmpeg'),
-        'ffprobe_path' => env('FFPROBE_PATH', 'ffprobe'),
+        'ffmpeg_path' => env('FFMPEG_PATH') ?: 'ffmpeg',
+        'ffprobe_path' => env('FFPROBE_PATH') ?: 'ffprobe',
         'timeout_seconds' => (int) env('FFMPEG_TIMEOUT', 300),
         'min_duration_seconds' => (float) env('VIDEO_MIN_DURATION', 3),
         'max_duration_seconds' => (float) env('VIDEO_MAX_DURATION', 900),

@@ -17,6 +17,7 @@ Schedule::job(new WorkerHeartbeatJob('long'))->everyFiveMinutes()->name('worker-
 
 Schedule::command('reels:dispatch')->everyMinute()->withoutOverlapping(10)->onOneServer();
 Schedule::command('reels:plan')->everyFifteenMinutes()->withoutOverlapping(30)->onOneServer();
+Schedule::command('reels:import-drive')->everyFiveMinutes()->withoutOverlapping(30)->runInBackground()->onOneServer();
 Schedule::command('reels:check-devices')->everyTenMinutes()->onOneServer();
 Schedule::command('reels:check-accounts')->dailyAt('02:30')->onOneServer();
 Schedule::command('reels:sync-metrics')->everySixHours()->withoutOverlapping(120)->onOneServer();

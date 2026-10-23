@@ -60,6 +60,18 @@ Install FFmpeg on the computer that runs the agent (it's free):
 
 Then follow `sync-agent/README.md` with `REELFLOW_SERVER_URL=https://reels.yourdomain.com`. The agent sees `media_processing: agent` in the server's settings and sends metadata, the thumbnail and AI frames automatically.
 
+## 5b. No computer at all: FFmpeg on the server + Google Drive import
+
+Hostinger allows running a static FFmpeg build from your home folder (free):
+
+```bash
+SSH_HOST=<ip> SSH_USER=u123456789 bash deploy/hostinger/install-ffmpeg.sh
+```
+
+Set the printed lines in `APP_DIR/shared/.env` (`MEDIA_PROCESSING=server`, `FFMPEG_PATH`, `FFPROBE_PATH`) and run `artisan optimize`. The server now creates metadata, thumbnails and AI frames itself, and the sync agent becomes optional.
+
+Then open **Setup → Google Drive import** and add a Drive folder link. Share the folder in Drive as **Anyone with the link → Viewer**. Every 5 minutes the server checks the folder and downloads up to `DRIVE_IMPORT_BATCH` new videos directly from Google, which is fast (the download goes from Google to Hostinger without passing through your internet connection). Each file is downloaded once. A video that is already in the library, for example one uploaded earlier by the agent, is recognised by its checksum and not added twice. Command line: `artisan reels:drive-add <link> --name="Reels"` and `artisan reels:import-drive`.
+
 ## 6. Add credentials when ready
 
 Edit `APP_DIR/shared/.env`:

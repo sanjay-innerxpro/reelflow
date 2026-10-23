@@ -25,6 +25,7 @@
         ],
         'Setup' => [
             ['Connected accounts', 'accounts.index', 'accounts.*'],
+            ['Google Drive import', 'drive.index', 'drive.*'],
             ['Sync devices', 'devices.index', 'devices.*'],
             ['AI settings', 'settings.ai', 'settings.ai'],
             ['Email settings', 'settings.email', 'settings.email'],

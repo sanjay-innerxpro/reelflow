@@ -7,6 +7,7 @@ use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\CalendarController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DeviceController;
+use App\Http\Controllers\DriveFolderController;
 use App\Http\Controllers\HealthController;
 use App\Http\Controllers\LogController;
 use App\Http\Controllers\PostController;
@@ -80,6 +81,12 @@ Route::middleware(['auth', 'auth.session'])->group(function () {
     Route::get('devices', [DeviceController::class, 'index'])->name('devices.index');
     Route::post('devices', [DeviceController::class, 'store'])->name('devices.store');
     Route::post('devices/{device}/revoke', [DeviceController::class, 'revoke'])->name('devices.revoke');
+
+    Route::get('drive', [DriveFolderController::class, 'index'])->name('drive.index');
+    Route::post('drive', [DriveFolderController::class, 'store'])->name('drive.store');
+    Route::post('drive/{folder}/toggle', [DriveFolderController::class, 'toggle'])->name('drive.toggle');
+    Route::post('drive/{folder}/refresh', [DriveFolderController::class, 'refresh'])->name('drive.refresh');
+    Route::delete('drive/{folder}', [DriveFolderController::class, 'destroy'])->name('drive.destroy');
 
     Route::get('settings/email', [SettingsController::class, 'email'])->name('settings.email');
     Route::put('settings/email', [SettingsController::class, 'updateEmail'])->name('settings.email.update');
