@@ -2,6 +2,8 @@
 
 namespace App\Providers;
 
+use App\Database\RetryingMariaDbConnector;
+use App\Database\RetryingMySqlConnector;
 use App\Listeners\LogNotificationDelivery;
 use App\Services\Ai\AiProviderFactory;
 use App\Services\Media\FfmpegMediaToolkit;
@@ -25,6 +27,8 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(Settings::class);
         $this->app->singleton(ActivityLogger::class);
         $this->app->singleton(AiProviderFactory::class);
+        $this->app->bind('db.connector.mysql', RetryingMySqlConnector::class);
+        $this->app->bind('db.connector.mariadb', RetryingMariaDbConnector::class);
     }
 
     public function boot(): void

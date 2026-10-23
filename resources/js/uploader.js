@@ -20,6 +20,19 @@ async function request(url, options = {}) {
     return data;
 }
 
+// Retry network errors, 5xx and 429 (shared hosting refuses briefly under load).
+async function retrying(fn, onRetry, attempts = 6) {
+    for (let attempt = 1; ; attempt++) {
+        try {
+            return await fn();
+        } catch (error) {
+            if (attempt >= attempts || (error.status && error.status < 500 && error.status !== 429)) throw error;
+            onRetry?.(attempt);
+            await sleep(1500 * attempt);
+        }
+    }
+}
+
 function formatSize(bytes) {
     return bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
@@ -80,28 +93,22 @@ async function uploadFile(root, file, li) {
         for (let index = 0; index < batch.total_chunks; index++) {
             if (done.has(index)) continue;
             const chunk = file.slice(index * batch.chunk_size, Math.min(file.size, (index + 1) * batch.chunk_size));
-            for (let attempt = 1; ; attempt++) {
-                try {
-                    await request(`${base}/chunks/${index}`, { method: 'PUT', headers: { 'Content-Type': 'application/octet-stream' }, body: chunk });
-                    break;
-                } catch (error) {
-                    if (attempt >= 5 || (error.status && error.status < 500 && error.status !== 429)) throw error;
-                    setState(`Connection problem, retrying (${attempt})…`, 'text-amber-600');
-                    await sleep(1500 * attempt);
-                }
-            }
+            await retrying(
+                () => request(`${base}/chunks/${index}`, { method: 'PUT', headers: { 'Content-Type': 'application/octet-stream' }, body: chunk }),
+                (attempt) => setState(`Connection problem, retrying (${attempt})…`, 'text-amber-600'),
+            );
             done.add(index);
             const percent = Math.round((done.size / batch.total_chunks) * 100);
             bar.style.width = `${percent}%`;
             setState(`Uploading ${percent}%`);
         }
 
-        let status = await request(`${base}/complete`, { method: 'POST' });
+        let status = await retrying(() => request(`${base}/complete`, { method: 'POST' }));
         bar.classList.replace('bg-indigo-500', 'bg-violet-500');
         for (let polls = 0; status.status === 'processing' && polls < 600; polls++) {
             setState(file.name.toLowerCase().endsWith('.zip') ? 'Unpacking…' : 'Processing…');
             await sleep(2000);
-            status = await request(base);
+            status = await retrying(() => request(base), null, 10);
         }
 
         if (status.status === 'completed') {
