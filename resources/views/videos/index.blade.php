@@ -67,7 +67,15 @@
         <div class="grid grid-cols-2 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(165px,1fr))]">
             @forelse($videos as $video)
                 @php
-                    $needsEye = in_array($video->ai_status->value, ['failed', 'low_confidence'], true);
+                    // Where the captions stand, in the words the card has room for.
+                    $captionLabel = [
+                        'pending' => 'captions queued',
+                        'generating' => 'writing captions…',
+                        'completed' => 'captions ready',
+                        'low_confidence' => 'needs review',
+                        'failed' => 'no captions',
+                        'skipped' => 'captions skipped',
+                    ][$video->ai_status->value] ?? $video->ai_status->value;
                 @endphp
                 <div class="group card relative overflow-hidden p-0 transition hover:-translate-y-0.5 hover:shadow-(--shadow-lift)">
                     <a href="{{ route('videos.show', $video) }}" class="relative block aspect-[9/16] overflow-hidden bg-slate-100">
@@ -87,12 +95,13 @@
                         @if($video->duration_seconds)
                             <span class="absolute top-2 right-2 rounded-md bg-black/55 px-1.5 py-0.5 text-[11px] font-medium text-on-color backdrop-blur">{{ gmdate($video->duration_seconds >= 3600 ? 'H:i:s' : 'i:s', (int) $video->duration_seconds) }}</span>
                         @endif
-                        <div class="absolute top-2 left-8 flex flex-wrap gap-1">
+                        {{-- Own row under the checkbox and the duration, so a long
+                             status never has to fight them for space. --}}
+                        <div class="absolute top-9 right-2 left-2 flex flex-wrap items-start gap-1">
                             @if($video->status->value !== 'ready')
                                 <x-badge :value="$video->status" />
-                            @elseif($needsEye)
-                                <x-badge :value="$video->ai_status">{{ $video->ai_status->value === 'failed' ? 'no captions' : 'needs review' }}</x-badge>
                             @endif
+                            <x-badge :value="$video->ai_status">{{ $captionLabel }}</x-badge>
                             @if($video->sources_count > 1)<x-badge color="gray">{{ $video->sources_count }}×</x-badge>@endif
                         </div>
                         @if($video->scheduled_posts_count)
