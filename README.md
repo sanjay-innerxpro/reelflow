@@ -127,7 +127,7 @@ cp .env.example .env
 php artisan key:generate
 # edit .env: database, Redis, mail (MAIL_MAILER=log for dev), VIDEO_STORAGE_DISK=videos
 php artisan migrate
-php artisan reels:create-user you@example.com --name="Your Name"   # asks for a password (12+ chars)
+php artisan reels:create-user you@example.com --name="Your Name" --admin   # asks for a password (12+ chars)
 
 # three terminals:
 php artisan serve
@@ -135,7 +135,7 @@ php artisan horizon          # queue workers
 php artisan schedule:work    # scheduler (cron in production)
 ```
 
-Open http://127.0.0.1:8000 and sign in. There is no public registration; users are created with `reels:create-user`.
+Open http://127.0.0.1:8000 and sign in. There is no public registration: the admin invites users under **Admin → Users** (each gets a private workspace with its own limits), or creates them with `reels:create-user`.
 
 ---
 

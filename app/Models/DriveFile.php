@@ -2,11 +2,14 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToWorkspace;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class DriveFile extends Model
 {
+    use BelongsToWorkspace;
+
     public const PENDING = 'pending';
 
     public const IMPORTED = 'imported';

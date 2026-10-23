@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Enums\VideoStatus;
 use App\Models\Video;
 use App\Services\Media\VideoProcessor;
+use App\Support\Tenancy\Tenant;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -33,7 +34,7 @@ class ProcessVideoJob implements ShouldBeUnique, ShouldQueue
 
     public function handle(VideoProcessor $processor): void
     {
-        $video = Video::find($this->videoId);
+        $video = Video::allWorkspaces()->find($this->videoId);
         if (! $video || ! in_array($video->status, [VideoStatus::Uploaded, VideoStatus::Processing, VideoStatus::Failed, VideoStatus::Ready], true)) {
             return;
         }
@@ -41,14 +42,14 @@ class ProcessVideoJob implements ShouldBeUnique, ShouldQueue
             return;
         }
 
-        $processor->process($video);
+        Tenant::run($video->workspace_id, fn () => $processor->process($video));
     }
 
     public function failed(Throwable $e): void
     {
-        $video = Video::find($this->videoId);
+        $video = Video::allWorkspaces()->find($this->videoId);
         if ($video && $video->status->canTransitionTo(VideoStatus::Failed)) {
-            $video->transitionTo(VideoStatus::Failed, ['processing_error' => mb_substr('Processing error: '.$e->getMessage(), 0, 2000)]);
+            Tenant::run($video->workspace_id, fn () => $video->transitionTo(VideoStatus::Failed, ['processing_error' => mb_substr('Processing error: '.$e->getMessage(), 0, 2000)]));
         }
     }
 }

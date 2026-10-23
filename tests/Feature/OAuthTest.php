@@ -21,6 +21,7 @@ class OAuthTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        config(['reelflow.youtube_enabled' => true]);
         $this->user = User::factory()->create();
     }
 

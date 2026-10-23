@@ -1,7 +1,6 @@
 <?php
 
 use App\Jobs\WorkerHeartbeatJob;
-use App\Support\Settings;
 use App\Support\SystemCheck;
 use Illuminate\Support\Facades\Schedule;
 
@@ -35,8 +34,5 @@ if (config('reelflow.queue_mode') === 'cron') {
 }
 Schedule::command('queue:prune-failed --hours=720')->daily();
 
-$summaryTime = rescue(fn () => (string) app(Settings::class)->get('notifications.daily_summary_time'), '21:30', false);
-Schedule::command('reels:daily-summary')
-    ->dailyAt(preg_match('/^\d{2}:\d{2}$/', $summaryTime) ? $summaryTime : '21:30')
-    ->timezone(config('reelflow.display_timezone'))
-    ->onOneServer();
+// Each workspace has its own summary time; the command sends once per day after it.
+Schedule::command('reels:daily-summary')->everyFifteenMinutes()->withoutOverlapping(10)->onOneServer();

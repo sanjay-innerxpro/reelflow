@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\UploadSessionStatus;
+use App\Models\Concerns\BelongsToWorkspace;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -10,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class UploadSession extends Model
 {
+    use BelongsToWorkspace;
     use HasUuids;
 
     protected $fillable = [

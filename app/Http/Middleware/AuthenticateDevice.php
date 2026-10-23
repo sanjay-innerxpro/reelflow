@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Models\SyncDevice;
+use App\Support\Tenancy\Tenant;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -35,6 +36,6 @@ class AuthenticateDevice
             $device->forceFill(['last_seen_at' => now(), 'last_ip' => $request->ip(), 'offline_notified_at' => null])->save();
         }
 
-        return $next($request);
+        return Tenant::run($device->workspace_id, fn () => $next($request));
     }
 }

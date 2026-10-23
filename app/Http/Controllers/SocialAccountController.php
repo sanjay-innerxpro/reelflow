@@ -30,7 +30,8 @@ class SocialAccountController extends Controller
             'accounts' => SocialAccount::with(['postingRule', 'parent'])->withCount(['scheduledPosts as failed_count' => fn ($q) => $q->where('status', 'failed')])
                 ->orderBy('platform')->orderBy('name')->get(),
             'metaConfigured' => $this->meta->isConfigured(),
-            'googleConfigured' => $this->google->isConfigured(),
+            'googleConfigured' => config('reelflow.youtube_enabled') && $this->google->isConfigured(),
+            'youtubeEnabled' => (bool) config('reelflow.youtube_enabled'),
             'metaScopes' => config('reelflow.meta.scopes'),
             'googleScopes' => config('reelflow.google.scopes'),
         ]);
@@ -85,7 +86,7 @@ class SocialAccountController extends Controller
 
     public function connectGoogle(Request $request): RedirectResponse
     {
-        abort_unless($this->google->isConfigured(), 404, 'Google OAuth credentials are not configured.');
+        abort_unless(config('reelflow.youtube_enabled') && $this->google->isConfigured(), 404, 'YouTube is not enabled.');
 
         $verifier = Str::random(64);
         $state = $this->newState($request, 'google');

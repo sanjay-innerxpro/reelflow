@@ -3,12 +3,14 @@
 namespace App\Models;
 
 use App\Enums\Platform;
+use App\Models\Concerns\BelongsToWorkspace;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class PostingRule extends Model
 {
+    use BelongsToWorkspace;
     use HasFactory;
 
     public const ORDER_OLDEST = 'oldest_first';

@@ -3,11 +3,14 @@
 namespace App\Models;
 
 use App\Enums\ErrorCategory;
+use App\Models\Concerns\BelongsToWorkspace;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class PublishAttempt extends Model
 {
+    use BelongsToWorkspace;
+
     public const RETRY = 'retry';
 
     public const FAIL = 'fail';

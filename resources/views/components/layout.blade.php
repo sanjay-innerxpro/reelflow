@@ -29,9 +29,15 @@
             ['Sync devices', 'devices.index', 'devices.*'],
             ['AI settings', 'settings.ai', 'settings.ai'],
             ['Email settings', 'settings.email', 'settings.email'],
-            ['System logs', 'logs.index', 'logs.*'],
+            ['Activity log', 'logs.index', 'logs.index'],
         ],
     ];
+    if (auth()->user()->isAdmin()) {
+        $nav['Admin'] = [
+            ['Users', 'admin.users.index', 'admin.users.*'],
+            ['Failed jobs', 'logs.failed-jobs', 'logs.failed-jobs'],
+        ];
+    }
     $failedCount = \App\Models\ScheduledPost::where('status', 'failed')->count();
 @endphp
 <div class="min-h-full lg:flex">

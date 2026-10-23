@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Services\Scheduling\SchedulePlanner;
+use App\Support\Tenancy\Tenant;
 use Illuminate\Console\Command;
 
 class PlanSchedule extends Command
@@ -13,7 +14,10 @@ class PlanSchedule extends Command
 
     public function handle(SchedulePlanner $planner): int
     {
-        $count = $planner->planAll();
+        $count = 0;
+        Tenant::each(function () use ($planner, &$count) {
+            $count += $planner->planAll();
+        });
         $this->info("Scheduled {$count} new post(s).");
 
         return self::SUCCESS;

@@ -1,9 +1,11 @@
 <?php
 
 use App\Http\Controllers\AccountController;
+use App\Http\Controllers\Admin\UserController as AdminUserController;
 use App\Http\Controllers\AiContentController;
 use App\Http\Controllers\AnalyticsController;
 use App\Http\Controllers\Auth\LoginController;
+use App\Http\Controllers\Auth\PasswordResetController;
 use App\Http\Controllers\CalendarController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DeviceController;
@@ -27,9 +29,13 @@ Route::view('data-deletion', 'legal.data-deletion')->name('legal.data-deletion')
 Route::middleware('guest')->group(function () {
     Route::get('login', [LoginController::class, 'show'])->name('login');
     Route::post('login', [LoginController::class, 'login'])->middleware('throttle:login');
+    Route::get('forgot-password', [PasswordResetController::class, 'request'])->name('password.request');
+    Route::post('forgot-password', [PasswordResetController::class, 'email'])->middleware('throttle:5,1')->name('password.email');
+    Route::get('reset-password/{token}', [PasswordResetController::class, 'edit'])->name('password.reset');
+    Route::post('reset-password', [PasswordResetController::class, 'update'])->middleware('throttle:10,1')->name('password.update');
 });
 
-Route::middleware(['auth', 'auth.session'])->group(function () {
+Route::middleware(['auth', 'auth.session', 'workspace'])->group(function () {
     Route::post('logout', [LoginController::class, 'logout'])->name('logout');
     Route::get('account', [AccountController::class, 'edit'])->name('account');
     Route::put('account/password', [AccountController::class, 'updatePassword'])->middleware('throttle:10,1')->name('account.password');
@@ -91,13 +97,26 @@ Route::middleware(['auth', 'auth.session'])->group(function () {
     Route::get('settings/email', [SettingsController::class, 'email'])->name('settings.email');
     Route::put('settings/email', [SettingsController::class, 'updateEmail'])->name('settings.email.update');
     Route::post('settings/email/test', [SettingsController::class, 'testEmail'])->middleware('throttle:5,1')->name('settings.email.test');
-    Route::post('settings/email/validate', [SettingsController::class, 'validateSmtp'])->middleware('throttle:5,1')->name('settings.email.validate');
+    Route::post('settings/email/validate', [SettingsController::class, 'validateSmtp'])->middleware(['admin', 'throttle:5,1'])->name('settings.email.validate');
     Route::get('settings/ai', [SettingsController::class, 'ai'])->name('settings.ai');
     Route::put('settings/ai', [SettingsController::class, 'updateAi'])->name('settings.ai.update');
 
     Route::get('analytics', AnalyticsController::class)->name('analytics');
+
+    // Super-admin
+    Route::prefix('admin')->name('admin.')->middleware('admin')->group(function () {
+        Route::get('users', [AdminUserController::class, 'index'])->name('users.index');
+        Route::get('users/create', [AdminUserController::class, 'create'])->name('users.create');
+        Route::post('users', [AdminUserController::class, 'store'])->name('users.store');
+        Route::get('users/{user}/edit', [AdminUserController::class, 'edit'])->name('users.edit');
+        Route::put('users/{user}', [AdminUserController::class, 'update'])->name('users.update');
+        Route::post('users/{user}/invite', [AdminUserController::class, 'invite'])->name('users.invite');
+        Route::post('users/{user}/suspend', [AdminUserController::class, 'suspend'])->name('users.suspend');
+    });
     Route::get('logs', [LogController::class, 'index'])->name('logs.index');
-    Route::get('logs/failed-jobs', [LogController::class, 'failedJobs'])->name('logs.failed-jobs');
-    Route::post('logs/failed-jobs/{uuid}/retry', [LogController::class, 'retryJob'])->whereUuid('uuid')->name('logs.failed-jobs.retry');
-    Route::delete('logs/failed-jobs/{uuid}', [LogController::class, 'forgetJob'])->whereUuid('uuid')->name('logs.failed-jobs.forget');
+    Route::middleware('admin')->group(function () {
+        Route::get('logs/failed-jobs', [LogController::class, 'failedJobs'])->name('logs.failed-jobs');
+        Route::post('logs/failed-jobs/{uuid}/retry', [LogController::class, 'retryJob'])->whereUuid('uuid')->name('logs.failed-jobs.retry');
+        Route::delete('logs/failed-jobs/{uuid}', [LogController::class, 'forgetJob'])->whereUuid('uuid')->name('logs.failed-jobs.forget');
+    });
 });

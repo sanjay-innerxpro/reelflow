@@ -3,6 +3,7 @@
 namespace App\Support;
 
 use App\Models\ActivityLog;
+use App\Support\Tenancy\Tenant;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
@@ -18,7 +19,8 @@ class ActivityLogger
         try {
             $userId = Auth::id();
 
-            return ActivityLog::create([
+            return ActivityLog::forceCreate([
+                'workspace_id' => Tenant::id() ?? $subject?->getAttribute('workspace_id'),
                 'user_id' => $userId,
                 'actor_type' => $userId ? 'user' : (app()->runningInConsole() ? 'system' : 'device'),
                 'action' => $action,

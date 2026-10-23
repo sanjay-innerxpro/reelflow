@@ -93,6 +93,7 @@
                 </ul>
             </div>
 
+            @if($queues)
             <div class="card card-body text-sm">
                 <h2 class="card-title mb-2">Queue health</h2>
                 <div class="flex items-center justify-between"><span>Horizon</span><x-badge :value="$queues['horizon'] === 'running' ? 'active' : $queues['horizon']" /></div>
@@ -103,6 +104,7 @@
                     @endforeach
                 </div>
             </div>
+            @endif
         </div>
     </div>
 

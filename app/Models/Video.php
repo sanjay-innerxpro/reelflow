@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\AiStatus;
 use App\Enums\Platform;
 use App\Enums\VideoStatus;
+use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasStateMachine;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -14,6 +15,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Video extends Model
 {
+    use BelongsToWorkspace;
     use HasFactory;
     use HasStateMachine;
 

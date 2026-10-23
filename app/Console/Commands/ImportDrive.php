@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Models\DriveFile;
 use App\Models\DriveFolder;
 use App\Services\Drive\DriveImporter;
+use App\Support\Tenancy\Tenant;
 use Illuminate\Console\Command;
 use Throwable;
 
@@ -21,35 +22,42 @@ class ImportDrive extends Command
         $started = microtime(true);
         $limit = (int) ($this->option('limit') ?: config('reelflow.drive.batch'));
         $listBefore = now()->subMinutes(config('reelflow.drive.list_every_minutes'));
-
-        foreach (DriveFolder::where('enabled', true)->get() as $folder) {
-            if (! $this->option('refresh') && $folder->last_listed_at?->gt($listBefore)) {
-                continue;
-            }
-            try {
-                $new = $importer->refresh($folder);
-                $this->line("{$folder->name}: {$new} new file(s).");
-            } catch (Throwable $e) {
-                $this->error("{$folder->name}: {$e->getMessage()}");
-            }
-        }
-
         $counts = [];
-        $pending = DriveFile::where('status', DriveFile::PENDING)
-            ->whereHas('folder', fn ($q) => $q->where('enabled', true))
-            ->orderBy('attempts')->orderBy('id')
-            ->limit($limit)->get();
 
-        foreach ($pending as $file) {
-            if (microtime(true) - $started > config('reelflow.drive.max_seconds')) {
-                break;
+        Tenant::each(function () use ($importer, $started, $limit, $listBefore, &$counts) {
+            foreach (DriveFolder::where('enabled', true)->get() as $folder) {
+                if (! $this->option('refresh') && $folder->last_listed_at?->gt($listBefore)) {
+                    continue;
+                }
+                try {
+                    $new = $importer->refresh($folder);
+                    $this->line("{$folder->name}: {$new} new file(s).");
+                } catch (Throwable $e) {
+                    $this->error("{$folder->name}: {$e->getMessage()}");
+                }
             }
-            $status = $importer->import($file);
-            $counts[$status] = ($counts[$status] ?? 0) + 1;
-            if ($status !== DriveFile::IMPORTED && $status !== DriveFile::DUPLICATE) {
-                $this->warn("{$file->name}: {$status} ({$file->error})");
+
+            $pending = DriveFile::where('status', DriveFile::PENDING)
+                ->whereHas('folder', fn ($q) => $q->where('enabled', true))
+                ->orderBy('attempts')->orderBy('id')
+                ->limit($limit)->get();
+
+            foreach ($pending as $file) {
+                if (microtime(true) - $started > config('reelflow.drive.max_seconds')) {
+                    return;
+                }
+                $status = $importer->import($file);
+                $counts[$status] = ($counts[$status] ?? 0) + 1;
+                if ($status === DriveImporter::QUOTA) {
+                    $this->warn($file->error);
+
+                    return; // this workspace is full; the others still import
+                }
+                if ($status !== DriveFile::IMPORTED && $status !== DriveFile::DUPLICATE) {
+                    $this->warn("{$file->name}: {$status} ({$file->error})");
+                }
             }
-        }
+        });
 
         $summary = collect($counts)->map(fn ($n, $status) => "{$n} {$status}")->implode(', ');
         $this->info($summary !== '' ? "Drive import: {$summary}." : 'Drive import: nothing to download.');

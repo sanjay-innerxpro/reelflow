@@ -14,6 +14,7 @@ use App\Services\Storage\VideoStorage;
 use App\Services\Sync\UploadService;
 use App\Support\ActivityLogger;
 use App\Support\Settings;
+use App\Support\Tenancy\Tenant;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
 
@@ -51,30 +52,35 @@ class Cleanup extends Command
 
         $days = config('reelflow.storage.cleanup_published_after_days');
         if ($days !== null) {
-            // Only originals whose every post is finished and that are not reusable.
-            $videos = Video::where('status', VideoStatus::Ready->value)
-                ->whereNull('storage_deleted_at')
-                ->where('allow_reuse', false)
-                ->whereHas('scheduledPosts')
-                ->whereDoesntHave('scheduledPosts', fn ($q) => $q->where(fn ($q) => $q
-                    ->whereNotIn('status', [PostStatus::Published->value, PostStatus::Cancelled->value])
-                    ->orWhere('published_at', '>', now()->subDays($days))))
-                ->limit(500)->get();
-
-            foreach ($videos as $video) {
-                if (! $this->doneEverywhere($video, $requirements, $settings)) {
-                    continue;
-                }
-                $this->line("Delete original: {$video->original_filename}");
-                if (! $dry) {
-                    $storage->delete($video->storage_key, $video->storage_disk);
-                    $video->update(['storage_deleted_at' => now()]);
-                    $activity->log('video.storage_deleted', $video, "Original removed after {$days} days (all posts published)");
-                }
-            }
+            Tenant::each(fn () => $this->deleteFinishedOriginals($days, $dry, $storage, $activity, $requirements, $settings));
         }
 
         return self::SUCCESS;
+    }
+
+    private function deleteFinishedOriginals(int $days, bool $dry, VideoStorage $storage, ActivityLogger $activity, PlatformRequirements $requirements, Settings $settings): void
+    {
+        // Only originals whose every post is finished and that are not reusable.
+        $videos = Video::where('status', VideoStatus::Ready->value)
+            ->whereNull('storage_deleted_at')
+            ->where('allow_reuse', false)
+            ->whereHas('scheduledPosts')
+            ->whereDoesntHave('scheduledPosts', fn ($q) => $q->where(fn ($q) => $q
+                ->whereNotIn('status', [PostStatus::Published->value, PostStatus::Cancelled->value])
+                ->orWhere('published_at', '>', now()->subDays($days))))
+            ->limit(500)->get();
+
+        foreach ($videos as $video) {
+            if (! $this->doneEverywhere($video, $requirements, $settings)) {
+                continue;
+            }
+            $this->line("Delete original: {$video->original_filename}");
+            if (! $dry) {
+                $storage->delete($video->storage_key, $video->storage_disk);
+                $video->update(['storage_deleted_at' => now()]);
+                $activity->log('video.storage_deleted', $video, "Original removed after {$days} days (all posts published)");
+            }
+        }
     }
 
     /**

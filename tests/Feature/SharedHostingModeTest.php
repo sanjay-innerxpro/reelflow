@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Models\Video;
 use App\Services\Ai\AiProviderFactory;
 use App\Support\SystemCheck;
+use App\Support\Tenancy\Tenant;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -175,6 +176,7 @@ class SharedHostingModeTest extends TestCase
                 ->assertSuccessful();
 
             $this->artisan('migrate');
+            Tenant::forget(); // the refreshed in-memory database has no workspaces yet
             $this->actingAs(User::factory()->create())->get('/horizon')->assertForbidden();
         } finally {
             putenv('REELFLOW_QUEUE_MODE');

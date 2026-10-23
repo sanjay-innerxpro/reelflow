@@ -27,14 +27,23 @@ class VideoStorage
         return config('reelflow.storage.disk');
     }
 
-    public function keyFor(string $checksum, string $extension): string
+    /**
+     * Every workspace stores under its own prefix, so identical files of two
+     * workspaces never share (or delete) one object.
+     */
+    public function keyFor(int $workspaceId, string $checksum, string $extension): string
     {
-        return sprintf('originals/%s/%s/%s.%s', substr($checksum, 0, 2), substr($checksum, 2, 2), $checksum, strtolower($extension));
+        return sprintf('w%d/originals/%s/%s/%s.%s', $workspaceId, substr($checksum, 0, 2), substr($checksum, 2, 2), $checksum, strtolower($extension));
     }
 
     public function thumbnailKeyFor(Video $video): string
     {
-        return sprintf('thumbnails/%s/%s.jpg', substr($video->checksum_sha256, 0, 2), $video->checksum_sha256);
+        return sprintf('w%d/thumbnails/%s/%s.jpg', $video->workspace_id, substr($video->checksum_sha256, 0, 2), $video->checksum_sha256);
+    }
+
+    public function frameKeyFor(Video $video, int $index): string
+    {
+        return sprintf('w%d/frames/%s/%s/%02d.jpg', $video->workspace_id, substr($video->checksum_sha256, 0, 2), $video->checksum_sha256, $index);
     }
 
     /**

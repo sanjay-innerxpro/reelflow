@@ -4,12 +4,14 @@ namespace App\Models;
 
 use App\Enums\ContentStatus;
 use App\Enums\Platform;
+use App\Models\Concerns\BelongsToWorkspace;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class AiContent extends Model
 {
+    use BelongsToWorkspace;
     use HasFactory;
 
     protected $fillable = [

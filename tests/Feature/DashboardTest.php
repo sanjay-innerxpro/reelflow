@@ -52,7 +52,7 @@ class DashboardTest extends TestCase
         SyncDevice::factory()->create();
         ActivityLog::create(['action' => 'test.entry', 'message' => 'hello', 'created_at' => now()]);
 
-        $this->actingAs(User::factory()->create());
+        $this->actingAs(User::factory()->admin()->create());
 
         foreach ([
             route('dashboard'), route('videos.index'), route('videos.show', $video), route('calendar'),

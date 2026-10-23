@@ -36,7 +36,7 @@ class AgentMediaService
 
         $frameKeys = [];
         foreach (array_values($frames) as $i => $frame) {
-            $key = sprintf('frames/%s/%s/%02d.jpg', substr($video->checksum_sha256, 0, 2), $video->checksum_sha256, $i);
+            $key = $this->storage->frameKeyFor($video, $i);
             $this->put($key, $frame, $video->storage_disk ?? $this->storage->defaultDisk());
             $frameKeys[] = $key;
         }

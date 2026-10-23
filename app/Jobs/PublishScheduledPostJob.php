@@ -2,7 +2,9 @@
 
 namespace App\Jobs;
 
+use App\Models\ScheduledPost;
 use App\Services\Publishing\PublishingService;
+use App\Support\Tenancy\Tenant;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 
@@ -28,6 +30,9 @@ class PublishScheduledPostJob implements ShouldQueue
 
     public function handle(PublishingService $service): void
     {
-        $service->run($this->postId, $this->claimToken);
+        $workspaceId = ScheduledPost::allWorkspaces()->whereKey($this->postId)->value('workspace_id');
+        if ($workspaceId !== null) {
+            Tenant::run($workspaceId, fn () => $service->run($this->postId, $this->claimToken));
+        }
     }
 }

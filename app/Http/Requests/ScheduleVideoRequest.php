@@ -2,7 +2,9 @@
 
 namespace App\Http\Requests;
 
+use App\Support\Tenancy\Tenant;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class ScheduleVideoRequest extends FormRequest
 {
@@ -18,7 +20,7 @@ class ScheduleVideoRequest extends FormRequest
     {
         return [
             'account_ids' => ['required', 'array', 'min:1'],
-            'account_ids.*' => ['integer', 'exists:social_accounts,id'],
+            'account_ids.*' => ['integer', Rule::exists('social_accounts', 'id')->where('workspace_id', Tenant::id())],
             'scheduled_at' => ['nullable', 'date'],
             'allow_reuse' => ['boolean'],
         ];

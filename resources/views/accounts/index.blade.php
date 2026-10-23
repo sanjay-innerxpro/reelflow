@@ -11,15 +11,15 @@
         </div>
     </x-slot:header>
 
-    @if(! $metaConfigured || ! $googleConfigured)
+    @if(auth()->user()->isAdmin() && (! $metaConfigured || ($youtubeEnabled && ! $googleConfigured)))
         <div class="card card-body mb-6 text-sm">
             <h2 class="card-title mb-2">Platform credentials needed</h2>
             @unless($metaConfigured)
                 <p>• <strong>Meta</strong>: set <code>META_APP_ID</code>, <code>META_APP_SECRET</code> and <code>META_REDIRECT_URI</code> (= <code>{{ route('accounts.meta.callback') }}</code>) in the server <code>.env</code>.</p>
             @endunless
-            @unless($googleConfigured)
+            @if($youtubeEnabled && ! $googleConfigured)
                 <p>• <strong>Google</strong>: set <code>GOOGLE_CLIENT_ID</code>, <code>GOOGLE_CLIENT_SECRET</code> and <code>GOOGLE_REDIRECT_URI</code> (= <code>{{ route('accounts.google.callback') }}</code>).</p>
-            @endunless
+            @endif
             <p class="help">See README → "Meta developer app" and "Google Cloud / YouTube API".</p>
         </div>
     @endif
@@ -79,6 +79,7 @@
                 <li>Instagram limits API publishing per 24 hours; ReelFlow checks the quota before each post.</li>
             </ul>
         </div>
+        @if($youtubeEnabled)
         <div class="card card-body">
             <h2 class="card-title mb-2">YouTube requirements</h2>
             <ul class="list-disc space-y-1 pl-5 text-slate-600">
@@ -88,5 +89,6 @@
                 <li>Whether a video appears as a Short is decided by YouTube from its format (vertical/square, length limit).</li>
             </ul>
         </div>
+        @endif
     </div>
 </x-layout>

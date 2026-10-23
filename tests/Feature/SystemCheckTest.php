@@ -80,7 +80,9 @@ class SystemCheckTest extends TestCase
         Storage::fake('videos');
         $this->artisan('reels:doctor')->assertFailed(); // no scheduler/worker heartbeat yet
 
-        $this->actingAs(User::factory()->create())->get('/')->assertOk()->assertSee('Setup checklist')->assertSee('Scheduler (cron)');
+        $this->actingAs(User::factory()->admin()->create())->get('/')->assertOk()->assertSee('Setup checklist')->assertSee('Scheduler (cron)');
+        // Server checks are the administrator's business, not each customer's.
+        $this->actingAs(User::factory()->create())->get('/')->assertOk()->assertDontSee('Scheduler (cron)');
     }
 
     public function test_security_headers_are_sent(): void

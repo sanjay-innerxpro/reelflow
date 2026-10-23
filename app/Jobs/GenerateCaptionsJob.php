@@ -6,6 +6,7 @@ use App\Models\Video;
 use App\Services\Ai\AiCaptionService;
 use App\Services\Ai\AiProviderException;
 use App\Services\Ai\InvalidAiResponse;
+use App\Support\Tenancy\Tenant;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -44,11 +45,16 @@ class GenerateCaptionsJob implements ShouldBeUnique, ShouldQueue
 
     public function handle(AiCaptionService $service): void
     {
-        $video = Video::find($this->videoId);
+        $video = Video::allWorkspaces()->find($this->videoId);
         if (! $video || ! $video->hasStoredFile()) {
             return;
         }
 
+        Tenant::run($video->workspace_id, fn () => $this->generate($service, $video));
+    }
+
+    private function generate(AiCaptionService $service, Video $video): void
+    {
         try {
             $service->generate($video, $this->generationId);
         } catch (InvalidAiResponse $e) {
@@ -68,9 +74,9 @@ class GenerateCaptionsJob implements ShouldBeUnique, ShouldQueue
 
     public function failed(Throwable $e): void
     {
-        $video = Video::find($this->videoId);
+        $video = Video::allWorkspaces()->find($this->videoId);
         if ($video) {
-            app(AiCaptionService::class)->markFailed($video, $this->generationId, $e->getMessage(), true);
+            Tenant::run($video->workspace_id, fn () => app(AiCaptionService::class)->markFailed($video, $this->generationId, $e->getMessage(), true));
         }
     }
 }

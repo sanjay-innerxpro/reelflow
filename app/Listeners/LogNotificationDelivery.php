@@ -34,7 +34,8 @@ class LogNotificationDelivery
 
         $related = $notification->related();
 
-        NotificationLog::create([
+        NotificationLog::forceCreate([
+            'workspace_id' => $notification->workspaceId,
             'type' => $notification->type(),
             'channel' => $channel,
             'recipient' => mb_substr($recipient, 0, 255),

@@ -95,7 +95,7 @@ class NotificationTest extends TestCase
         $this->duePost(Platform::Facebook, ['status' => PostStatus::Published, 'published_at' => now(), 'post_url' => 'https://facebook.com/reel/9']);
         $this->duePost(Platform::YouTube, ['status' => PostStatus::Failed, 'last_error_message' => 'quota']);
 
-        $this->artisan('reels:daily-summary')->assertSuccessful();
+        $this->artisan('reels:daily-summary', ['--force' => true])->assertSuccessful();
 
         Notification::assertSentOnDemand(DailySummaryNotification::class, function (DailySummaryNotification $n) {
             return $n->summary['published'] === 1 && $n->summary['failed'] === 1 && count($n->summary['links']) === 1;
@@ -127,7 +127,9 @@ class NotificationTest extends TestCase
 
     public function test_smtp_validation_reports_non_smtp_mailer(): void
     {
-        $this->actingAs(User::factory()->create())
+        $this->actingAs(User::factory()->create())->post(route('settings.email.validate'))->assertForbidden();
+
+        $this->actingAs(User::factory()->admin()->create())
             ->post(route('settings.email.validate'))
             ->assertSessionHasErrors('smtp');
     }

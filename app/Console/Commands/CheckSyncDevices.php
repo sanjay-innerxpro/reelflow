@@ -6,6 +6,7 @@ use App\Enums\DeviceStatus;
 use App\Models\SyncDevice;
 use App\Services\Notifications\NotificationService;
 use App\Support\ActivityLogger;
+use App\Support\Tenancy\Tenant;
 use Illuminate\Console\Command;
 
 class CheckSyncDevices extends Command
@@ -18,7 +19,7 @@ class CheckSyncDevices extends Command
     {
         $cutoff = now()->subMinutes(config('reelflow.devices.offline_after_minutes'));
 
-        SyncDevice::where('status', DeviceStatus::Active->value)
+        Tenant::each(fn () => SyncDevice::where('status', DeviceStatus::Active->value)
             ->whereNotNull('last_seen_at')
             ->where('last_seen_at', '<', $cutoff)
             ->whereNull('offline_notified_at')
@@ -27,7 +28,7 @@ class CheckSyncDevices extends Command
                 $device->forceFill(['offline_notified_at' => now()])->save();
                 $activity->log('device.offline', $device, "{$device->name} has not checked in since {$device->last_seen_at}", level: 'warning');
                 $notifications->deviceOffline($device);
-            });
+            }));
 
         return self::SUCCESS;
     }

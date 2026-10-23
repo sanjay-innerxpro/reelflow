@@ -7,6 +7,7 @@ use App\Jobs\ProcessVideoJob;
 use App\Models\DriveFile;
 use App\Models\DriveFolder;
 use App\Models\Video;
+use App\Models\Workspace;
 use App\Services\Storage\VideoStorage;
 use App\Services\Sync\PathSanitizer;
 use App\Services\Sync\UploadService;
@@ -15,11 +16,14 @@ use Illuminate\Database\UniqueConstraintViolationException;
 use Throwable;
 
 /**
- * Server-side import from Google Drive. Same outcome as an agent upload:
+ * Server-side import from Google Drive, run inside the folder's workspace. Same outcome as an agent upload:
  * a stored, de-duplicated video (by SHA-256) queued for processing.
  */
 class DriveImporter
 {
+    /** Returned (not stored) when the workspace's storage limit is reached; the file stays pending. */
+    public const QUOTA = 'quota';
+
     public function __construct(
         private readonly GoogleDriveClient $drive,
         private readonly VideoStorage $storage,
@@ -70,6 +74,11 @@ class DriveImporter
      */
     public function import(DriveFile $file): string
     {
+        $workspace = Workspace::findOrFail($file->workspace_id);
+        if ($file->size_bytes !== null && ! $workspace->hasStorageFor($file->size_bytes)) {
+            return $this->overQuota($file, $workspace);
+        }
+
         $file->increment('attempts');
         $tmp = $this->storage->tempPath('download');
 
@@ -96,9 +105,14 @@ class DriveImporter
             if ($existing && ! $this->uploads->needsUpload($existing)) {
                 return $this->finish($file, DriveFile::DUPLICATE, $existing);
             }
+            if (! $workspace->hasStorageFor($size)) {
+                $file->decrement('attempts');
+
+                return $this->overQuota($file, $workspace);
+            }
 
             $extension = strtolower(pathinfo($file->name, PATHINFO_EXTENSION)) ?: 'mp4';
-            $key = $this->storage->keyFor($checksum, $extension);
+            $key = $this->storage->keyFor($workspace->id, $checksum, $extension);
             $stream = fopen($tmp, 'rb');
             try {
                 $this->storage->putStream($key, $stream, null, $mime);
@@ -151,6 +165,13 @@ class DriveImporter
         } finally {
             @unlink($tmp);
         }
+    }
+
+    private function overQuota(DriveFile $file, Workspace $workspace): string
+    {
+        $file->update(['error' => "Storage limit of {$workspace->storage_limit_mb} MB reached. Free space (delete videos) or ask the administrator for more."]);
+
+        return self::QUOTA;
     }
 
     private function finish(DriveFile $file, string $status, ?Video $video = null, ?string $error = null): string

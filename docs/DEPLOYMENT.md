@@ -30,7 +30,7 @@ Once the VM exists and your DuckDNS name points at it (sections 0.1–0.2), one 
 ```bash
 curl -fsSLO https://raw.githubusercontent.com/sanjay-innerxpro/reelflow/main/deploy/install-server.sh
 sudo DOMAIN=yourname.duckdns.org EMAIL=you@example.com bash install-server.sh
-sudo -u www-data php /var/www/reelflow/current/artisan reels:create-user you@example.com
+sudo -u www-data php /var/www/reelflow/current/artisan reels:create-user you@example.com --admin
 ```
 
 Re-running it is safe; existing passwords and `.env` values are kept. Add credentials to `/var/www/reelflow/shared/.env` whenever you have them, then run `sudo -u www-data php /var/www/reelflow/current/artisan optimize && sudo supervisorctl restart reelflow-horizon`. The manual steps below explain what the script does.
@@ -116,7 +116,7 @@ npm ci && npm run build
 php artisan migrate --force
 php artisan config:cache && php artisan route:cache && php artisan view:cache && php artisan event:cache
 ln -sfn /var/www/reelflow/releases/initial /var/www/reelflow/current
-php artisan reels:create-user you@example.com --name="Admin"
+php artisan reels:create-user you@example.com --name="Admin" --admin
 ```
 
 ## 5. Object storage (optional)

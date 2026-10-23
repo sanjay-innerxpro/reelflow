@@ -13,6 +13,7 @@ use App\Services\Media\MediaToolkit;
 use App\Services\Storage\VideoStorage;
 use App\Support\ActivityLogger;
 use App\Support\Settings;
+use App\Support\Tenancy\Tenant;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
@@ -234,6 +235,12 @@ class AiCaptionService
         $maxBytes = config('reelflow.ai.max_video_size_mb') * 1024 * 1024;
         if ($video->size_bytes > $maxBytes) {
             throw new AiProviderException('Video exceeds AI_MAX_VIDEO_SIZE_MB; write captions manually.');
+        }
+
+        // Free AI quotas are shared by all workspaces; each gets a daily share.
+        $workspace = Tenant::workspace();
+        if ($workspace && $workspace->daily_ai_limit > 0 && $workspace->aiGenerationsToday() > $workspace->daily_ai_limit) {
+            throw new AiBudgetExceeded("Daily limit of {$workspace->daily_ai_limit} AI captions reached for this workspace. Use Generate again tomorrow, or write the captions yourself.");
         }
 
         $budget = config('reelflow.ai.daily_budget_usd');

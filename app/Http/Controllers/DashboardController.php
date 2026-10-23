@@ -12,13 +12,20 @@ use App\Models\Video;
 use App\Support\DisplayTime;
 use App\Support\QueueHealth;
 use App\Support\SystemCheck;
+use App\Support\Tenancy\Tenant;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\View\View;
 
 class DashboardController extends Controller
 {
+    /** Checklist items an ordinary user can act on; the rest is server setup for the admin. */
+    private const USER_CHECKS = ['accounts'];
+
     public function __invoke(QueueHealth $queues, SystemCheck $system): View
     {
+        $admin = auth()->user()->isAdmin();
+        $checks = Cache::remember('reelflow:dashboard:checks:'.Tenant::id(), 60, fn () => $system->all());
         $tz = DisplayTime::timezone();
         $todayStart = now($tz)->startOfDay()->utc();
 
@@ -36,9 +43,9 @@ class DashboardController extends Controller
             'upcoming' => ScheduledPost::with(['video', 'socialAccount'])->where('status', PostStatus::Scheduled->value)
                 ->orderBy('scheduled_at')->limit(8)->get(),
             'activity' => ActivityLog::latest('created_at')->limit(12)->get(),
-            'queues' => $queues->summary(),
+            'queues' => $admin ? $queues->summary() : null,
             'setup' => array_filter(
-                Cache::remember('reelflow:dashboard:checks', 60, fn () => $system->all()),
+                $admin ? $checks : Arr::only($checks, self::USER_CHECKS),
                 fn ($check) => $check['status'] !== SystemCheck::OK,
             ),
         ]);

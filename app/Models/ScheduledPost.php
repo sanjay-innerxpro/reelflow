@@ -6,6 +6,7 @@ use App\Enums\ErrorCategory;
 use App\Enums\Platform;
 use App\Enums\PostStatus;
 use App\Enums\PublishStage;
+use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasStateMachine;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -14,6 +15,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class ScheduledPost extends Model
 {
+    use BelongsToWorkspace;
     use HasFactory;
     use HasStateMachine;
 

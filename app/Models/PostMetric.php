@@ -2,11 +2,14 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToWorkspace;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class PostMetric extends Model
 {
+    use BelongsToWorkspace;
+
     public const FIELDS = ['views', 'likes', 'comments', 'shares', 'saves', 'reach', 'avg_watch_seconds', 'total_watch_seconds'];
 
     protected $fillable = [

@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Services\Scheduling\PostDispatcher;
+use App\Support\Tenancy\Tenant;
 use Illuminate\Console\Command;
 
 class DispatchDuePosts extends Command
@@ -13,7 +14,10 @@ class DispatchDuePosts extends Command
 
     public function handle(PostDispatcher $dispatcher): int
     {
-        $count = $dispatcher->dispatchDue();
+        $count = 0;
+        Tenant::each(function () use ($dispatcher, &$count) {
+            $count += $dispatcher->dispatchDue();
+        });
         $this->info("Dispatched {$count} post(s).");
 
         return self::SUCCESS;

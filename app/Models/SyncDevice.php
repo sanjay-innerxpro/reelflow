@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\DeviceStatus;
+use App\Models\Concerns\BelongsToWorkspace;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -11,6 +12,7 @@ use Illuminate\Support\Str;
 
 class SyncDevice extends Model
 {
+    use BelongsToWorkspace;
     use HasFactory;
 
     protected $fillable = [
@@ -59,7 +61,7 @@ class SyncDevice extends Model
 
     public static function findByToken(string $token): ?self
     {
-        return self::where('token_hash', self::hashToken($token))->first();
+        return self::allWorkspaces()->where('token_hash', self::hashToken($token))->first();
     }
 
     public function isActive(): bool

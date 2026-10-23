@@ -8,6 +8,7 @@ use App\Models\PostingRule;
 use App\Models\SocialAccount;
 use App\Services\Publishing\PublishException;
 use App\Support\ActivityLogger;
+use App\Support\Tenancy\Tenant;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
@@ -86,7 +87,7 @@ class MetaOAuthService
         }
 
         $key = Str::random(40);
-        Cache::put('meta-connect:'.$key, Crypt::encrypt(['pages' => $pages, 'scopes' => $granted]), now()->addMinutes(15));
+        Cache::put($this->pendingKey($key), Crypt::encrypt(['pages' => $pages, 'scopes' => $granted]), now()->addMinutes(15));
 
         return $key;
     }
@@ -126,6 +127,7 @@ class MetaOAuthService
         $data = $this->pending($key);
         $scopes = $data['scopes'];
         $connected = [];
+        $this->assertWithinAccountLimit($data['pages'], $pageIds, $instagramIds);
 
         DB::transaction(function () use ($data, $pageIds, $instagramIds, $userId, $scopes, &$connected) {
             foreach ($data['pages'] as $page) {
@@ -171,7 +173,7 @@ class MetaOAuthService
             }
         });
 
-        Cache::forget('meta-connect:'.$key);
+        Cache::forget($this->pendingKey($key));
 
         return $connected;
     }
@@ -210,11 +212,40 @@ class MetaOAuthService
     }
 
     /**
+     * The selection belongs to the workspace that started the connection.
+     */
+    private function pendingKey(string $key): string
+    {
+        return 'meta-connect:'.Tenant::id().':'.$key;
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $pages
+     * @param  array<int, string>  $pageIds
+     * @param  array<int, string>  $instagramIds
+     */
+    private function assertWithinAccountLimit(array $pages, array $pageIds, array $instagramIds): void
+    {
+        $limit = Tenant::workspace()?->max_accounts ?? 0;
+        if ($limit <= 0) {
+            return;
+        }
+
+        $known = SocialAccount::pluck('external_id')->all();
+        $offered = collect($pages)->flatMap(fn ($p) => [$p['id'], $p['instagram_business_account']['id'] ?? null])->filter()->all();
+        $new = collect(array_merge($pageIds, $instagramIds))->intersect($offered)->diff($known)->unique()->count();
+
+        if (SocialAccount::count() + $new > $limit) {
+            throw new OAuthException("Your workspace can connect up to {$limit} accounts. Disconnect one first or ask the administrator for a higher limit.");
+        }
+    }
+
+    /**
      * @return array{pages: array<int, array<string, mixed>>, scopes: array<int, string>}
      */
     private function pending(string $key): array
     {
-        $payload = Cache::get('meta-connect:'.$key);
+        $payload = Cache::get($this->pendingKey($key));
         if (! $payload) {
             throw new OAuthException('The Facebook connection expired. Please connect again.');
         }

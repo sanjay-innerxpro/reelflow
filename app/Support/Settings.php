@@ -3,12 +3,15 @@
 namespace App\Support;
 
 use App\Models\AppSetting;
+use App\Support\Tenancy\Tenant;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Cache;
+use LogicException;
 
 /**
- * Runtime-editable application settings stored in app_settings, with
- * defaults. Secrets never live here; they stay in the environment.
+ * Runtime-editable settings of the current workspace, stored in
+ * app_settings, with defaults. Secrets never live here; they stay in the
+ * environment.
  */
 class Settings
 {
@@ -19,8 +22,10 @@ class Settings
      */
     public static function defaults(): array
     {
+        $owner = Tenant::workspace()?->owner?->email ?? config('reelflow.admin_email');
+
         return [
-            'notifications.recipients' => array_values(array_filter([config('reelflow.admin_email')])),
+            'notifications.recipients' => array_values(array_filter([$owner])),
             'notifications.on_success' => true,
             'notifications.on_failure' => true,
             'notifications.on_auth_problem' => true,
@@ -49,7 +54,8 @@ class Settings
      */
     public function all(): array
     {
-        $stored = Cache::remember(self::CACHE_KEY, 300, fn () => AppSetting::query()->pluck('value', 'key')->all());
+        // Outside a workspace (system context) only the defaults apply.
+        $stored = Tenant::id() === null ? [] : Cache::remember($this->cacheKey(), 300, fn () => AppSetting::query()->pluck('value', 'key')->all());
 
         return array_merge(self::defaults(), $stored);
     }
@@ -69,11 +75,20 @@ class Settings
      */
     public function set(array $values): void
     {
+        if (Tenant::id() === null) {
+            throw new LogicException('Settings can only be saved inside a workspace.');
+        }
+
         foreach ($values as $key => $value) {
             AppSetting::updateOrCreate(['key' => $key], ['value' => $value]);
         }
 
-        Cache::forget(self::CACHE_KEY);
+        Cache::forget($this->cacheKey());
+    }
+
+    private function cacheKey(): string
+    {
+        return self::CACHE_KEY.'.'.Tenant::id();
     }
 
     /**

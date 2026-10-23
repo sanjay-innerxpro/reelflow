@@ -29,6 +29,7 @@
         </form>
 
         <div class="space-y-6">
+            @if(auth()->user()->isAdmin())
             <div class="card card-body text-sm">
                 <h2 class="card-title mb-2">Mail transport (from .env)</h2>
                 <dl class="grid grid-cols-2 gap-y-1">
@@ -42,6 +43,7 @@
                 @if($mail['mailer'] === 'log')<p class="help text-amber-700">MAIL_MAILER=log writes emails to the log file instead of sending them.</p>@endif
                 <form method="POST" action="{{ route('settings.email.validate') }}" class="mt-3">@csrf<button class="btn btn-sm">Validate SMTP connection</button></form>
             </div>
+            @endif
             <form method="POST" action="{{ route('settings.email.test') }}" class="card card-body space-y-2 text-sm">
                 @csrf
                 <h2 class="card-title">Send a test email</h2>

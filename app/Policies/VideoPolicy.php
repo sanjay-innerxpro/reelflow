@@ -6,14 +6,14 @@ use App\Models\User;
 use App\Models\Video;
 
 /**
- * Single-workspace app: records without an owner belong to every dashboard
- * user; owned records only to their owner.
+ * A record is available to the users of its workspace only. Queries are
+ * already scoped to the workspace; this is the second line of defence.
  */
 class VideoPolicy
 {
     public function view(User $user, Video $model): bool
     {
-        return $model->user_id === null || $model->user_id === $user->id;
+        return $model->workspace_id !== null && $model->workspace_id === $user->workspace_id;
     }
 
     public function update(User $user, Video $model): bool

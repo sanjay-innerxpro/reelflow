@@ -1,7 +1,7 @@
 <x-layout title="System logs">
     <x-slot:header>
         <h1 class="text-xl font-semibold">Activity &amp; audit log</h1>
-        <a href="{{ route('logs.failed-jobs') }}" class="btn">Failed queue jobs</a>
+        @if(auth()->user()->isAdmin())<a href="{{ route('logs.failed-jobs') }}" class="btn">Failed queue jobs</a>@endif
     </x-slot:header>
 
     <form method="GET" class="card card-body mb-4 flex flex-wrap items-end gap-3">

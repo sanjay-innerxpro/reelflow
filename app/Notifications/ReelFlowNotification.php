@@ -5,6 +5,7 @@ namespace App\Notifications;
 use App\Models\NotificationLog;
 use App\Support\SecretRedactor;
 use App\Support\Settings;
+use App\Support\Tenancy\Tenant;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\Eloquent\Model;
@@ -23,8 +24,12 @@ abstract class ReelFlowNotification extends Notification implements ShouldQueue
     /** @var array<int, int> */
     public array $backoff = [60, 300];
 
+    /** Workspace the email is about; its delivery log belongs to it. */
+    public ?int $workspaceId = null;
+
     public function __construct()
     {
+        $this->workspaceId = Tenant::id();
         $this->onQueue('notifications');
     }
 
@@ -51,11 +56,13 @@ abstract class ReelFlowNotification extends Notification implements ShouldQueue
     public function failed(\Throwable $e): void
     {
         $related = $this->related();
+        $recipients = Tenant::run($this->workspaceId, fn () => app(Settings::class)->recipients());
 
-        NotificationLog::create([
+        NotificationLog::forceCreate([
+            'workspace_id' => $this->workspaceId,
             'type' => $this->type(),
             'channel' => 'mail',
-            'recipient' => mb_substr(implode(', ', app(Settings::class)->recipients()), 0, 255),
+            'recipient' => mb_substr(implode(', ', $recipients), 0, 255),
             'subject' => mb_substr($this->subject(), 0, 255),
             'status' => 'failed',
             'related_type' => $related?->getMorphClass(),

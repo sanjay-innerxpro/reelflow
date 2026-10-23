@@ -11,8 +11,8 @@ use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 /**
- * Private dashboard: there is no public registration. Users are created with
- * `php artisan reels:create-user`.
+ * Invite-only: there is no public registration. The administrator invites
+ * users (Admin → Users) or creates them with `php artisan reels:create-user`.
  */
 class LoginController extends Controller
 {
@@ -33,8 +33,16 @@ class LoginController extends Controller
             throw ValidationException::withMessages(['email' => 'These credentials do not match our records.']);
         }
 
+        $user = $request->user();
+        if (! $user->workspace || $user->workspace->isSuspended()) {
+            Auth::logout();
+            $activity->log('auth.suspended', $user, 'Sign-in refused: workspace suspended', level: 'warning');
+            throw ValidationException::withMessages(['email' => 'This account is suspended. Contact the administrator.']);
+        }
+
         $request->session()->regenerate();
-        $activity->log('auth.login', $request->user(), 'Signed in');
+        $user->forceFill(['last_login_at' => now()])->save();
+        $activity->log('auth.login', $user, 'Signed in');
 
         return redirect()->intended(route('dashboard'));
     }

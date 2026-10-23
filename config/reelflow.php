@@ -50,6 +50,13 @@ return [
         'repeated_failure_threshold' => (int) env('UPLOAD_FAILURE_ALERT_THRESHOLD', 3),
     ],
 
+    // Defaults for newly invited users (0 = unlimited); editable per user.
+    'workspaces' => [
+        'storage_limit_mb' => is_numeric(env('WORKSPACE_STORAGE_MB')) ? (int) env('WORKSPACE_STORAGE_MB') : 2048,
+        'max_accounts' => is_numeric(env('WORKSPACE_MAX_ACCOUNTS')) ? (int) env('WORKSPACE_MAX_ACCOUNTS') : 5,
+        'daily_ai_limit' => is_numeric(env('WORKSPACE_DAILY_AI_LIMIT')) ? (int) env('WORKSPACE_DAILY_AI_LIMIT') : 50,
+    ],
+
     'devices' => [
         'offline_after_minutes' => (int) env('SYNC_DEVICE_OFFLINE_MINUTES', 30),
         'token_prefix' => 'rfd_',
@@ -234,6 +241,10 @@ return [
         'instagram_max_hashtags' => (int) env('INSTAGRAM_MAX_HASHTAGS', 5),
         'instagram_max_caption' => 2200,
     ],
+
+    // YouTube is off until the Google Cloud project's upload quota allows
+    // more than a handful of uploads a day (see README → YouTube quota).
+    'youtube_enabled' => (bool) env('YOUTUBE_ENABLED', false),
 
     'google' => [
         'client_id' => env('GOOGLE_CLIENT_ID'),

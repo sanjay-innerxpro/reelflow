@@ -49,7 +49,7 @@ Use the exact PHP path the deploy printed. Plain `php` on Hostinger may be a dif
 
 ```bash
 ssh -p 65002 u123456789@<ip>
-/opt/alt/php83/usr/bin/php ~/domains/reels.yourdomain.com/reelflow/current/artisan reels:create-user you@yourdomain.com
+/opt/alt/php83/usr/bin/php ~/domains/reels.yourdomain.com/reelflow/current/artisan reels:create-user you@yourdomain.com --admin
 ```
 
 ## 5. Sync agent on your computer

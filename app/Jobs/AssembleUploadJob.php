@@ -8,6 +8,7 @@ use App\Models\UploadSession;
 use App\Services\Storage\VideoStorage;
 use App\Services\Sync\UploadService;
 use App\Support\ActivityLogger;
+use App\Support\Tenancy\Tenant;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\DB;
@@ -32,11 +33,16 @@ class AssembleUploadJob implements ShouldQueue
 
     public function handle(VideoStorage $storage, UploadService $uploads, ActivityLogger $activity): void
     {
-        $session = UploadSession::with('video')->find($this->uploadSessionId);
+        $session = UploadSession::allWorkspaces()->find($this->uploadSessionId);
         if (! $session || $session->status !== UploadSessionStatus::Assembling) {
             return;
         }
 
+        Tenant::run($session->workspace_id, fn () => $this->assemble($session->load('video'), $storage, $uploads, $activity));
+    }
+
+    private function assemble(UploadSession $session, VideoStorage $storage, UploadService $uploads, ActivityLogger $activity): void
+    {
         $video = $session->video;
         $tmp = $storage->tempPath('assemble');
         $out = fopen($tmp, 'wb');
@@ -80,7 +86,7 @@ class AssembleUploadJob implements ShouldQueue
             }
 
             $extension = strtolower(pathinfo($video->original_filename, PATHINFO_EXTENSION)) ?: 'mp4';
-            $key = $storage->keyFor($video->checksum_sha256, $extension);
+            $key = $storage->keyFor($video->workspace_id, $video->checksum_sha256, $extension);
             $stream = fopen($tmp, 'rb');
             $storage->putStream($key, $stream, null, $mime);
             if (is_resource($stream)) {
@@ -112,11 +118,13 @@ class AssembleUploadJob implements ShouldQueue
 
     public function failed(Throwable $e): void
     {
-        $session = UploadSession::with('video')->find($this->uploadSessionId);
+        $session = UploadSession::allWorkspaces()->find($this->uploadSessionId);
         if (! $session) {
             return;
         }
-        $session->update(['status' => UploadSessionStatus::Failed, 'error' => mb_substr($e->getMessage(), 0, 2000)]);
-        app(UploadService::class)->recordVideoFailure($session->video, 'Assembling the upload failed: '.$e->getMessage());
+        Tenant::run($session->workspace_id, function () use ($session, $e) {
+            $session->update(['status' => UploadSessionStatus::Failed, 'error' => mb_substr($e->getMessage(), 0, 2000)]);
+            app(UploadService::class)->recordVideoFailure($session->load('video')->video, 'Assembling the upload failed: '.$e->getMessage());
+        });
     }
 }

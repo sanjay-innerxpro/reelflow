@@ -13,6 +13,7 @@ use App\Models\VideoSource;
 use App\Services\Notifications\NotificationService;
 use App\Services\Storage\VideoStorage;
 use App\Support\ActivityLogger;
+use App\Support\Tenancy\Tenant;
 use Illuminate\Support\Facades\DB;
 
 class UploadService
@@ -56,6 +57,11 @@ class UploadService
             }
 
             if (! $video) {
+                $workspace = Tenant::workspace();
+                if ($workspace && ! $workspace->hasStorageFor((int) $data['size'])) {
+                    throw new UploadException("Storage limit of {$workspace->storage_limit_mb} MB reached. Delete videos or ask the administrator for more space.", 422, 'storage_limit');
+                }
+
                 $video = Video::create([
                     'user_id' => $device->user_id,
                     'sync_device_id' => $device->id,
