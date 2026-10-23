@@ -88,9 +88,14 @@ class SocialAccountController extends Controller
         abort_unless($this->google->isConfigured(), 404, 'Google OAuth credentials are not configured.');
 
         $verifier = Str::random(64);
-        $request->session()->put('oauth.google.verifier', $verifier);
+        $state = $this->newState($request, 'google');
+        $verifiers = collect($request->session()->get('oauth.google.verifiers', []))
+            ->only(array_keys($request->session()->get('oauth.google.states', [])))
+            ->put($state, $verifier)
+            ->all();
+        $request->session()->put('oauth.google.verifiers', $verifiers);
 
-        return redirect()->away($this->google->authorizationUrl($this->newState($request, 'google'), $verifier));
+        return redirect()->away($this->google->authorizationUrl($state, $verifier));
     }
 
     public function googleCallback(Request $request): RedirectResponse
@@ -99,7 +104,10 @@ class SocialAccountController extends Controller
             return redirect()->route('accounts.index')->withErrors(['oauth' => $error]);
         }
 
-        $verifier = (string) $request->session()->pull('oauth.google.verifier');
+        $verifiers = (array) $request->session()->get('oauth.google.verifiers', []);
+        $verifier = (string) ($verifiers[(string) $request->query('state')] ?? '');
+        unset($verifiers[(string) $request->query('state')]);
+        $request->session()->put('oauth.google.verifiers', $verifiers);
 
         try {
             $accounts = $this->google->handleCallback((string) $request->query('code'), $verifier, $request->user()->id);
@@ -169,7 +177,15 @@ class SocialAccountController extends Controller
     private function newState(Request $request, string $provider): string
     {
         $state = Str::random(40);
-        $request->session()->put("oauth.{$provider}.state", ['value' => $state, 'at' => now()->timestamp]);
+        // Keep the last few pending states so a second click or a second tab
+        // does not invalidate the first one.
+        $pending = collect($request->session()->get("oauth.{$provider}.states", []))
+            ->filter(fn ($at) => now()->timestamp - (int) $at <= 900)
+            ->put($state, now()->timestamp)
+            ->sortDesc()
+            ->take(5)
+            ->all();
+        $request->session()->put("oauth.{$provider}.states", $pending);
 
         return $state;
     }
@@ -179,15 +195,28 @@ class SocialAccountController extends Controller
      */
     private function callbackError(Request $request, string $provider): ?string
     {
-        $expected = $request->session()->pull("oauth.{$provider}.state");
+        $pending = (array) $request->session()->get("oauth.{$provider}.states", []);
+        $state = (string) $request->query('state');
+        $issuedAt = null;
+        foreach ($pending as $candidate => $at) {
+            if (hash_equals((string) $candidate, $state)) {
+                $issuedAt = (int) $at;
+            }
+        }
+
+        if ($issuedAt !== null) {
+            // Single use.
+            unset($pending[$state]);
+            $request->session()->put("oauth.{$provider}.states", $pending);
+        }
 
         if ($request->filled('error')) {
             return 'Authorisation was cancelled or denied ('.Str::limit((string) ($request->query('error_description') ?? $request->query('error')), 200).').';
         }
-        if (! is_array($expected) || ! hash_equals((string) $expected['value'], (string) $request->query('state'))) {
-            return 'Invalid OAuth state. Please try connecting again.';
+        if ($issuedAt === null) {
+            return 'This sign-in link has expired or was already used. Click Connect again (once) and finish in the same browser tab.';
         }
-        if (now()->timestamp - (int) $expected['at'] > 900) {
+        if (now()->timestamp - $issuedAt > 900) {
             return 'The authorisation request expired. Please try again.';
         }
         if (! $request->filled('code')) {

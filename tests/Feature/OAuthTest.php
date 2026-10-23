@@ -31,7 +31,7 @@ class OAuthTest extends TestCase
         $location = $response->headers->get('Location');
         $this->assertStringStartsWith('https://www.facebook.com/v23.0/dialog/oauth?', $location);
         parse_str(parse_url($location, PHP_URL_QUERY), $query);
-        $this->assertSame(session('oauth.meta.state')['value'], $query['state']);
+        $this->assertArrayHasKey($query['state'], session('oauth.meta.states'));
         $this->assertStringContainsString('instagram_content_publish', $query['scope']);
         $this->assertStringContainsString('pages_manage_posts', $query['scope']);
     }
@@ -47,6 +47,21 @@ class OAuthTest extends TestCase
         $this->assertArrayNotHasKey('scope', $query);
     }
 
+    public function test_earlier_connect_click_is_still_accepted_and_state_is_single_use(): void
+    {
+        Http::fake(['graph.facebook.com/*' => Http::response(['error' => ['message' => 'x', 'code' => 100]], 400)]);
+        $first = $this->actingAs($this->user)->get(route('accounts.meta.connect'))->headers->get('Location');
+        $this->get(route('accounts.meta.connect')); // second click / second tab
+        parse_str(parse_url($first, PHP_URL_QUERY), $q);
+
+        $this->get(route('accounts.meta.callback', ['code' => 'c', 'state' => $q['state']]))
+            ->assertSessionHasErrors(['oauth' => 'Meta authorisation failed: Meta code exchange: x']);
+
+        $this->get(route('accounts.meta.callback', ['code' => 'c', 'state' => $q['state']]))
+            ->assertSessionHasErrors('oauth');
+        $this->assertStringContainsString('already used', session('errors')->first('oauth'));
+    }
+
     public function test_callback_with_wrong_state_is_rejected(): void
     {
         Http::fake();
@@ -60,8 +75,9 @@ class OAuthTest extends TestCase
 
     public function test_denied_authorisation_is_reported(): void
     {
-        $this->actingAs($this->user)->get(route('accounts.meta.connect'));
-        $state = session('oauth.meta.state')['value'];
+        $location = $this->actingAs($this->user)->get(route('accounts.meta.connect'))->headers->get('Location');
+        parse_str(parse_url($location, PHP_URL_QUERY), $q);
+        $state = $q['state'];
 
         $this->get(route('accounts.meta.callback', ['error' => 'access_denied', 'error_description' => 'Permissions error', 'state' => $state]))
             ->assertSessionHasErrors('oauth');
@@ -85,8 +101,9 @@ class OAuthTest extends TestCase
             ]]]),
         ]);
 
-        $this->actingAs($this->user)->get(route('accounts.meta.connect'));
-        $state = session('oauth.meta.state')['value'];
+        $location = $this->actingAs($this->user)->get(route('accounts.meta.connect'))->headers->get('Location');
+        parse_str(parse_url($location, PHP_URL_QUERY), $q);
+        $state = $q['state'];
 
         $select = $this->get(route('accounts.meta.callback', ['code' => 'code123', 'state' => $state]));
         $select->assertRedirect();
@@ -128,7 +145,7 @@ class OAuthTest extends TestCase
         parse_str(parse_url($redirect, PHP_URL_QUERY), $query);
         $this->assertSame('S256', $query['code_challenge_method']);
         $this->assertSame('offline', $query['access_type']);
-        $verifier = session('oauth.google.verifier');
+        $verifier = session('oauth.google.verifiers')[$query['state']];
 
         $this->get(route('accounts.google.callback', ['code' => 'gcode', 'state' => $query['state']]))
             ->assertRedirect(route('accounts.index'))->assertSessionHas('status');
