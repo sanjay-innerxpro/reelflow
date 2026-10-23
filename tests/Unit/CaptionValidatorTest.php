@@ -45,12 +45,59 @@ class CaptionValidatorTest extends TestCase
     public function test_schema_violations_are_rejected(): void
     {
         try {
-            $this->validator->parse(FakeAiProvider::validJson(['confidence' => 7, 'facebook_hashtags' => 'not-an-array']));
+            $this->validator->parse(FakeAiProvider::validJson(['confidence' => 'banana']));
             $this->fail('Expected validation failure');
         } catch (InvalidAiResponse $e) {
             $this->assertArrayHasKey('confidence', $e->errors);
-            $this->assertArrayHasKey('facebook_hashtags', $e->errors);
         }
+    }
+
+    public function test_a_payload_without_any_caption_is_rejected(): void
+    {
+        $this->expectException(InvalidAiResponse::class);
+        $this->validator->parse('{"topic": 1}');
+    }
+
+    public function test_confidence_on_another_scale_is_rescaled(): void
+    {
+        $this->assertSame(0.85, $this->validator->parse(FakeAiProvider::validJson(['confidence' => 85]))->confidence);
+        $this->assertSame(0.7, $this->validator->parse(FakeAiProvider::validJson(['confidence' => 7]))->confidence);
+        $this->assertSame(0.9, $this->validator->parse(FakeAiProvider::validJson(['confidence' => '90%']))->confidence);
+        $this->assertSame(0.85, $this->validator->parse(FakeAiProvider::validJson(['confidence' => 'high']))->confidence);
+    }
+
+    public function test_hashtags_given_as_one_string_are_split(): void
+    {
+        $result = $this->validator->parse(FakeAiProvider::validJson(['facebook_hashtags' => '#pasta, #quickrecipe #food']));
+
+        $this->assertSame(['pasta', 'quickrecipe', 'food'], $result->facebookHashtags);
+        $this->assertNotEmpty($result->adjustments);
+    }
+
+    public function test_captions_nested_per_platform_are_flattened(): void
+    {
+        $result = $this->validator->parse(json_encode([
+            'result' => [
+                'topic' => 'Masala pasta', 'category' => 'Food', 'language' => 'English', 'confidence' => 0.9,
+                'facebook' => ['caption' => 'FB caption', 'hashtags' => ['pasta']],
+                'instagram' => ['caption' => 'IG caption', 'hashtags' => ['pasta']],
+                'youtube' => ['title' => 'YT title', 'description' => 'YT description', 'tags' => ['pasta']],
+            ],
+        ]));
+
+        $this->assertSame('FB caption', $result->facebookCaption);
+        $this->assertSame('IG caption', $result->instagramCaption);
+        $this->assertSame('YT title', $result->youtubeTitle);
+        $this->assertSame(['pasta'], $result->youtubeTags);
+        $this->assertSame('en', $result->language, 'A language name is normalised to its code');
+        $this->assertSame([], $result->contentWarnings, 'A missing list reads as empty');
+    }
+
+    public function test_json_wrapped_in_prose_is_recovered(): void
+    {
+        $result = $this->validator->parse('Sure! Here are your captions:'."\n".FakeAiProvider::validJson()."\nLet me know if you want changes.");
+
+        $this->assertSame('Masala pasta recipe', $result->topic);
     }
 
     public function test_confident_response_requires_captions(): void

@@ -11,9 +11,11 @@ use Illuminate\Support\Facades\Validator;
  */
 class CaptionValidator
 {
+    public function __construct(private readonly CaptionShapeRepair $repair = new CaptionShapeRepair) {}
+
     public function parse(string $raw): CaptionResult
     {
-        $data = $this->decode($raw);
+        [$data, $repairs] = $this->repair->repair($this->decode($raw));
 
         $validator = Validator::make($data, [
             'topic' => ['present', 'nullable', 'string', 'max:255'],
@@ -51,7 +53,7 @@ class CaptionValidator
             }
         }
 
-        $adjustments = [];
+        $adjustments = $repairs;
 
         $igMax = config('reelflow.meta.instagram_max_hashtags');
         $igTags = $this->hashtags($data['instagram_hashtags']);
@@ -109,22 +111,57 @@ class CaptionValidator
     private function decode(string $raw): array
     {
         $text = trim($raw);
+        if ($text === '') {
+            throw new InvalidAiResponse('The AI returned an empty response.');
+        }
+
         // Tolerate a fenced block even though the prompt forbids it.
-        if (preg_match('/^```(?:json)?\s*(.*?)\s*```$/s', $text, $m)) {
+        if (preg_match('/```(?:json)?\s*(.*?)\s*```/s', $text, $m)) {
             $text = $m[1];
         }
 
-        try {
-            $data = json_decode($text, true, 32, JSON_THROW_ON_ERROR);
-        } catch (\JsonException $e) {
-            throw new InvalidAiResponse('AI response is not valid JSON: '.$e->getMessage());
+        $data = $this->decodeJson($text);
+
+        // Some endpoints return the JSON document as a JSON string.
+        if (is_string($data)) {
+            $data = $this->decodeJson(trim($data));
         }
 
         if (! is_array($data) || array_is_list($data)) {
+            // A single-element list is a wrapped object often enough to unwrap.
+            if (is_array($data) && count($data) === 1 && is_array($data[0]) && ! array_is_list($data[0])) {
+                return $data[0];
+            }
+
             throw new InvalidAiResponse('AI response must be a JSON object.');
         }
 
         return $data;
+    }
+
+    /**
+     * Decode, falling back to the outermost {...} or [...] when the model
+     * wrapped the document in prose.
+     */
+    private function decodeJson(string $text): mixed
+    {
+        $data = json_decode($text, true, 64);
+        if (json_last_error() === JSON_ERROR_NONE) {
+            return $data;
+        }
+
+        foreach ([['{', '}'], ['[', ']']] as [$open, $close]) {
+            $start = strpos($text, $open);
+            $end = strrpos($text, $close);
+            if ($start !== false && $end !== false && $end > $start) {
+                $data = json_decode(substr($text, $start, $end - $start + 1), true, 64);
+                if (json_last_error() === JSON_ERROR_NONE) {
+                    return $data;
+                }
+            }
+        }
+
+        throw new InvalidAiResponse('AI response is not valid JSON: '.json_last_error_msg());
     }
 
     /**

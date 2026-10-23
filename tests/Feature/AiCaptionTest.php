@@ -14,6 +14,7 @@ use App\Services\Ai\AiProviderException;
 use App\Services\Ai\AiProviderFactory;
 use App\Services\Ai\AiRequest;
 use App\Services\Ai\CaptionPrompt;
+use App\Services\Ai\InvalidAiResponse;
 use App\Services\Ai\Providers\OpenAiCompatibleProvider;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -58,7 +59,7 @@ class AiCaptionTest extends TestCase
         $this->assertSame('Masala Pasta in 10 Minutes Easy', $yt->title);
         $this->assertSame(['masala pasta', 'quick recipe', 'indian pasta'], $yt->tags);
         $this->assertSame('fake-vision-1', $fb->model);
-        $this->assertSame('v1', $fb->prompt_version);
+        $this->assertSame('v2', $fb->prompt_version);
 
         $generation = AiGeneration::first();
         $this->assertSame(1200, $generation->input_tokens);
@@ -121,7 +122,7 @@ class AiCaptionTest extends TestCase
 
     public function test_invalid_json_retries_then_leaves_video_usable(): void
     {
-        $this->provider->responses = ['not json', 'still not json', '{"topic": 1}'];
+        $this->provider->responses = array_fill(0, 6, 'not json');
         $video = $this->readyVideo(['status' => VideoStatus::Processing, 'ai_status' => AiStatus::Pending]);
         $job = new GenerateCaptionsJob($video->id);
 
@@ -140,6 +141,37 @@ class AiCaptionTest extends TestCase
         $this->assertSame(AiStatus::Failed, $video->ai_status);
         $this->assertSame(0, AiContent::count());
         $this->assertSame(AiGeneration::STATUS_FAILED, AiGeneration::first()->status);
+    }
+
+    public function test_an_unusable_answer_is_corrected_without_failing(): void
+    {
+        // The shape live providers get wrong most often: everything nested.
+        $this->provider->responses = ['Here you go: {"captions": {"facebook": {"caption": "x"}}}', FakeAiProvider::validJson()];
+        $video = $this->readyVideo(['status' => VideoStatus::Processing, 'ai_status' => AiStatus::Pending]);
+
+        app(AiCaptionService::class)->generate($video, (string) Str::uuid());
+
+        $this->assertSame(AiStatus::Completed, $video->fresh()->ai_status);
+        $generation = AiGeneration::first();
+        $this->assertSame(1, $generation->repair_attempts);
+        $this->assertStringContainsString('Masala pasta', (string) $generation->raw_output);
+        $this->assertSame(2400, $generation->input_tokens, 'Both calls are billed to the generation');
+        $this->assertStringContainsString('flat JSON object', $this->provider->requests[1]->userPrompt);
+    }
+
+    public function test_the_raw_answer_is_kept_when_a_generation_fails(): void
+    {
+        config(['reelflow.ai.repair_attempts' => 0]);
+        $this->provider->responses = ['{"nope": true}'];
+        $video = $this->readyVideo();
+
+        try {
+            app(AiCaptionService::class)->generate($video, (string) Str::uuid());
+            $this->fail('Expected the generation to fail');
+        } catch (InvalidAiResponse) {
+        }
+
+        $this->assertSame('{"nope": true}', AiGeneration::first()->raw_output);
     }
 
     public function test_permanent_provider_error_is_not_retried(): void

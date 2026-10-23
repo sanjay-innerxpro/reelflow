@@ -178,7 +178,9 @@ return [
                 'free' => false,
             ],
         ],
-        'max_output_tokens' => (int) env('AI_MAX_OUTPUT_TOKENS', 2000),
+        'max_output_tokens' => (int) env('AI_MAX_OUTPUT_TOKENS', 3000),
+        // Extra calls allowed per generation to correct an unusable answer.
+        'repair_attempts' => (int) env('AI_REPAIR_ATTEMPTS', 1),
         'max_frames' => (int) env('AI_MAX_FRAMES', 6),
         'frame_width' => (int) env('AI_FRAME_WIDTH', 512),
         'max_video_size_mb' => (int) env('AI_MAX_VIDEO_SIZE_MB', 1024),
@@ -186,7 +188,7 @@ return [
         'input_cost_per_mtok' => is_numeric(env('AI_INPUT_COST_PER_MTOK')) ? (float) env('AI_INPUT_COST_PER_MTOK') : null,
         'output_cost_per_mtok' => is_numeric(env('AI_OUTPUT_COST_PER_MTOK')) ? (float) env('AI_OUTPUT_COST_PER_MTOK') : null,
         'low_confidence_threshold' => (float) env('AI_LOW_CONFIDENCE_THRESHOLD', 0.6),
-        'prompt_version' => env('AI_PROMPT_VERSION', 'v1'),
+        'prompt_version' => env('AI_PROMPT_VERSION', 'v2'),
 
         'transcription' => [
             // none | groq (free tier Whisper) | compatible (any OpenAI-style

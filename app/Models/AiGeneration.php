@@ -23,7 +23,8 @@ class AiGeneration extends Model
 
     protected $fillable = [
         'video_id', 'status', 'provider', 'model', 'prompt_version', 'frame_count', 'used_transcript', 'input_tokens',
-        'output_tokens', 'cost_usd', 'duration_ms', 'confidence', 'result', 'error', 'started_at', 'completed_at',
+        'output_tokens', 'cost_usd', 'duration_ms', 'confidence', 'result', 'raw_output', 'repair_attempts', 'error',
+        'started_at', 'completed_at',
     ];
 
     protected function casts(): array

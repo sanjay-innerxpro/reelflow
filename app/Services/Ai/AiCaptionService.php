@@ -88,27 +88,15 @@ class AiCaptionService
                 throw new AiProviderException('No frames could be extracted from the video.');
             }
 
-            $started = microtime(true);
-            $response = $provider->generate(new AiRequest(
+            $request = new AiRequest(
                 systemPrompt: $systemPrompt,
                 userPrompt: $this->prompt->user($video, count($frames), $transcript),
                 imagePaths: $frames,
                 jsonSchema: CaptionPrompt::schema(),
                 maxOutputTokens: config('reelflow.ai.max_output_tokens'),
-            ));
-            $durationMs = (int) ((microtime(true) - $started) * 1000);
+            );
 
-            $generation->fill([
-                'model' => $response->model,
-                'frame_count' => count($frames),
-                'used_transcript' => $transcript !== null,
-                'input_tokens' => $response->inputTokens,
-                'output_tokens' => $response->outputTokens,
-                'cost_usd' => $this->estimateCost($response),
-                'duration_ms' => $durationMs,
-            ])->save();
-
-            $result = $this->validator->parse($response->text);
+            $result = $this->ask($provider, $request, $generation, $video, count($frames), $transcript !== null);
         } finally {
             if ($local) {
                 @unlink($local);
@@ -117,6 +105,119 @@ class AiCaptionService
         }
 
         return $this->persist($video, $generation, $result);
+    }
+
+    /**
+     * Call the provider and validate the answer, re-asking with the exact
+     * problem when the answer is unusable or incomplete. A second call costs
+     * far less than a failed generation someone has to notice and retry, and
+     * models do correct themselves when told what was wrong. The best answer
+     * seen is kept, so a re-ask can only improve the outcome.
+     */
+    private function ask(AiVisionProvider $provider, AiRequest $request, AiGeneration $generation, Video $video, int $frameCount, bool $usedTranscript): CaptionResult
+    {
+        $attempts = max(0, (int) config('reelflow.ai.repair_attempts'));
+        $best = null;
+
+        for ($attempt = 0; ; $attempt++) {
+            $started = microtime(true);
+            $response = $provider->generate($request);
+            $durationMs = (int) ((microtime(true) - $started) * 1000);
+
+            $generation->fill([
+                'model' => $response->model,
+                'frame_count' => $frameCount,
+                'used_transcript' => $usedTranscript,
+                'input_tokens' => ($generation->input_tokens ?? 0) + (int) $response->inputTokens,
+                'output_tokens' => ($generation->output_tokens ?? 0) + (int) $response->outputTokens,
+                'cost_usd' => $this->addCost($generation->cost_usd, $response),
+                'duration_ms' => (int) $generation->duration_ms + $durationMs,
+                'raw_output' => mb_substr($response->text, 0, 8000),
+                'repair_attempts' => $attempt,
+            ])->save();
+
+            try {
+                $result = $this->validator->parse($response->text);
+                if ($this->isComplete($result) || $attempt >= $attempts) {
+                    return $this->better($best, $result);
+                }
+
+                $best = $this->better($best, $result);
+                $problem = new InvalidAiResponse('The answer did not cover every platform.', array_filter([
+                    'facebook_caption' => blank($result->facebookCaption) ? ['missing'] : null,
+                    'instagram_caption' => blank($result->instagramCaption) ? ['missing'] : null,
+                    'youtube_title' => blank($result->youtubeTitle) ? ['missing'] : null,
+                ]));
+            } catch (InvalidAiResponse $e) {
+                if ($attempt >= $attempts) {
+                    if ($best !== null) {
+                        return $best;
+                    }
+
+                    throw $e;
+                }
+                $problem = $e;
+            }
+
+            Log::warning('Re-asking the AI after an unusable response', [
+                'video_id' => $generation->video_id,
+                'generation' => $generation->id,
+                'errors' => $problem->errors ?: $problem->getMessage(),
+            ]);
+            $this->activity->log('ai.repair', $video, 'The model returned an unusable response; asking again.', level: 'warning');
+
+            $request = new AiRequest(
+                systemPrompt: $request->systemPrompt,
+                userPrompt: $request->userPrompt."\n\n".$this->correction($problem),
+                imagePaths: $request->imagePaths,
+                jsonSchema: $request->jsonSchema,
+                maxOutputTokens: $request->maxOutputTokens,
+            );
+        }
+    }
+
+    /** Every platform the app publishes to has something to publish. */
+    private function isComplete(CaptionResult $result): bool
+    {
+        return filled($result->facebookCaption) && filled($result->instagramCaption) && filled($result->youtubeTitle);
+    }
+
+    private function better(?CaptionResult $best, CaptionResult $result): CaptionResult
+    {
+        if ($best === null || $this->isComplete($result)) {
+            return $result;
+        }
+
+        $filled = fn (CaptionResult $r) => count(array_filter([
+            $r->facebookCaption, $r->instagramCaption, $r->youtubeTitle, $r->youtubeDescription,
+            $r->facebookHashtags, $r->instagramHashtags, $r->youtubeTags,
+        ]));
+
+        return $filled($result) > $filled($best) ? $result : $best;
+    }
+
+    /** Sum what is known; an unknown cost stays unknown rather than becoming zero. */
+    private function addCost(?float $sofar, AiResponse $response): ?float
+    {
+        $cost = $this->estimateCost($response);
+
+        return $cost === null ? $sofar : round((float) $sofar + $cost, 6);
+    }
+
+    private function correction(InvalidAiResponse $e): string
+    {
+        $problems = [];
+        foreach ($e->errors as $field => $messages) {
+            $problems[] = '- '.$field.': '.implode(' ', (array) $messages);
+        }
+
+        return implode("\n", array_filter([
+            'Your previous answer could not be used: '.$e->getMessage(),
+            $problems ? implode("\n", $problems) : null,
+            'Answer again with one flat JSON object and nothing else: no prose, no Markdown fences, no wrapper key, no nested objects per platform.',
+            'Every key below must be present at the top level: '.implode(', ', array_keys(CaptionPrompt::schema()['properties'])).'.',
+            'Hashtags and tags are JSON arrays of strings. "confidence" is a number between 0 and 1.',
+        ]));
     }
 
     private function persist(Video $video, AiGeneration $generation, CaptionResult $result): AiGeneration
