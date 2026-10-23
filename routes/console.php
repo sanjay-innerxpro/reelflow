@@ -24,11 +24,13 @@ Schedule::command('reels:cleanup')->dailyAt('03:30')->onOneServer();
 if (config('reelflow.queue_mode') === 'cron') {
     // Shared hosting: no daemons allowed. Each minute start one worker per
     // lane; it exits when its queue is empty (or after ~50s of picking up
-    // work), and withoutOverlapping keeps a long upload from being doubled.
+    // work). The overlap lock is short on purpose: the host may kill a
+    // worker without releasing it, and a second worker during a long upload
+    // is safe (posts are claimed atomically) and keeps other users' posts moving.
     Schedule::command('queue:work '.config('queue.default').' --queue=notifications,default,media,ai --stop-when-empty --max-time=50 --tries=3 --timeout=900')
-        ->everyMinute()->withoutOverlapping(20)->runInBackground()->name('queue-worker-general');
+        ->everyMinute()->withoutOverlapping(10)->runInBackground()->name('queue-worker-general');
     Schedule::command('queue:work '.config('queue.long_connection').' --queue=ingest,publish-youtube,publish-instagram,publish-facebook --stop-when-empty --max-time=50 --tries=1 --timeout=3600')
-        ->everyMinute()->withoutOverlapping(70)->runInBackground()->name('queue-worker-publishing');
+        ->everyMinute()->withoutOverlapping(10)->runInBackground()->name('queue-worker-publishing');
 } else {
     Schedule::command('horizon:snapshot')->everyFiveMinutes();
 }
