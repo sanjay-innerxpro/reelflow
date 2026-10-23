@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AccountController;
 use App\Http\Controllers\AiContentController;
 use App\Http\Controllers\AnalyticsController;
 use App\Http\Controllers\Auth\LoginController;
@@ -27,8 +28,10 @@ Route::middleware('guest')->group(function () {
     Route::post('login', [LoginController::class, 'login'])->middleware('throttle:login');
 });
 
-Route::middleware('auth')->group(function () {
+Route::middleware(['auth', 'auth.session'])->group(function () {
     Route::post('logout', [LoginController::class, 'logout'])->name('logout');
+    Route::get('account', [AccountController::class, 'edit'])->name('account');
+    Route::put('account/password', [AccountController::class, 'updatePassword'])->middleware('throttle:10,1')->name('account.password');
     Route::get('/', DashboardController::class)->name('dashboard');
 
     // Video library & content studio

@@ -9,6 +9,7 @@ use App\Models\SyncDevice;
 use App\Models\User;
 use App\Support\Settings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Hash;
 use Tests\Support\BuildsFixtures;
 use Tests\TestCase;
 
@@ -134,5 +135,20 @@ class DashboardTest extends TestCase
         $this->get(route('legal.privacy'))->assertOk()->assertSee('Limited Use');
         $this->get(route('legal.terms'))->assertOk();
         $this->get(route('legal.data-deletion'))->assertOk()->assertSee('Disconnect');
+    }
+
+    public function test_password_can_be_changed(): void
+    {
+        $user = User::factory()->create(['password' => bcrypt('old-password-123')]);
+        $this->actingAs($user)->get(route('account'))->assertOk();
+
+        $this->put(route('account.password'), ['current_password' => 'wrong', 'password' => 'new-password-456', 'password_confirmation' => 'new-password-456'])
+            ->assertSessionHasErrors('current_password');
+        $this->put(route('account.password'), ['current_password' => 'old-password-123', 'password' => 'short', 'password_confirmation' => 'short'])
+            ->assertSessionHasErrors('password');
+        $this->put(route('account.password'), ['current_password' => 'old-password-123', 'password' => 'new-password-456', 'password_confirmation' => 'new-password-456'])
+            ->assertSessionHas('status');
+
+        $this->assertTrue(Hash::check('new-password-456', $user->fresh()->password));
     }
 }
