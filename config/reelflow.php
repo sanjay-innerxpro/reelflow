@@ -93,6 +93,9 @@ return [
         // Empty uses the preset; json_schema automatically falls back to json_object
         // if the endpoint rejects it. Output is always validated server-side.
         'json_mode' => env('AI_JSON_MODE'),
+        // OpenAI-compatible "reasoning_effort" (e.g. none|low|medium). "none" makes
+        // Gemini's free tier answer much faster; empty = not sent.
+        'reasoning_effort' => env('AI_REASONING_EFFORT') ?: null,
 
         /*
         | OpenAI-compatible presets. Model names and free-tier limits change

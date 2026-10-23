@@ -27,6 +27,7 @@ class OpenAiCompatibleProvider implements AiVisionProvider
         private readonly string $providerName = 'openai',
         private readonly string $jsonMode = 'json_schema',
         private readonly string $maxTokensField = 'max_completion_tokens',
+        private readonly ?string $reasoningEffort = null,
     ) {}
 
     public function name(): string
@@ -70,6 +71,9 @@ class OpenAiCompatibleProvider implements AiVisionProvider
                     ['role' => 'user', 'content' => $content],
                 ],
             ];
+            if ($this->reasoningEffort) {
+                $payload['reasoning_effort'] = $this->reasoningEffort;
+            }
             if ($mode === 'json_schema') {
                 $payload['response_format'] = [
                     'type' => 'json_schema',

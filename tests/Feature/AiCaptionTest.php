@@ -238,7 +238,7 @@ class AiCaptionTest extends TestCase
         Http::fake(['generativelanguage.googleapis.com/*' => Http::response([
             'choices' => [['message' => ['content' => FakeAiProvider::validJson()], 'finish_reason' => 'stop']],
         ])]);
-        config(['reelflow.ai.provider' => 'gemini', 'reelflow.ai.api_key' => 'free-key', 'reelflow.ai.model' => null]);
+        config(['reelflow.ai.provider' => 'gemini', 'reelflow.ai.api_key' => 'free-key', 'reelflow.ai.model' => null, 'reelflow.ai.reasoning_effort' => 'none']);
 
         (new AiProviderFactory)->vision()->generate(new AiRequest('s', 'u', [], CaptionPrompt::schema(), 500));
 
@@ -246,6 +246,7 @@ class AiCaptionTest extends TestCase
             && $r->hasHeader('Authorization', 'Bearer free-key')
             && $r['model'] === 'gemini-flash-latest'
             && $r['max_tokens'] === 500
+            && $r['reasoning_effort'] === 'none'
             && $r['response_format']['type'] === 'json_schema');
     }
 

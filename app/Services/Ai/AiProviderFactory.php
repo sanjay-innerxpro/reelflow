@@ -73,6 +73,7 @@ class AiProviderFactory
             providerName: $provider,
             jsonMode: $c['json_mode'] ?: $preset['json_mode'],
             maxTokensField: $preset['max_tokens_field'],
+            reasoningEffort: $c['reasoning_effort'] ?? null,
         );
     }
 
