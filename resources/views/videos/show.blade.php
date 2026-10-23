@@ -21,16 +21,36 @@
 
     <div class="grid gap-6 lg:grid-cols-3">
         <div class="space-y-6">
-            <div class="card overflow-hidden">
-                @if($video->hasStoredFile())
-                    <video controls preload="metadata" class="aspect-[9/16] w-full bg-black" @if($thumbnail) poster="{{ $thumbnail }}" @endif>
-                        <source src="{{ route('videos.media', $video) }}" type="{{ $video->mime_type ?? 'video/mp4' }}">
-                    </video>
-                @else
-                    <div class="flex aspect-[9/16] items-center justify-center bg-slate-100 p-6 text-center text-sm text-slate-500">
-                        {{ $video->storage_deleted_at ? 'Original removed from storage after publishing.' : 'Video not uploaded yet.' }}
+            @php
+                $preview = $content['facebook']['model'] ?? $content['instagram']['model'] ?? null;
+                $previewTags = collect($preview?->hashtags ?? [])->take(4)->map(fn ($t) => '#'.$t)->implode(' ');
+            @endphp
+            {{-- Phone-style preview: how the reel reads in the feed. --}}
+            <div class="mx-auto w-full max-w-[300px]">
+                <div class="rounded-[2.5rem] bg-slate-900 p-2.5 shadow-(--shadow-lift) ring-1 ring-slate-700/50 dark:bg-black">
+                    <div class="relative aspect-[9/16] overflow-hidden rounded-[2rem] bg-black">
+                        @if($video->hasStoredFile())
+                            <video controls playsinline preload="metadata" class="h-full w-full object-cover" @if($thumbnail) poster="{{ $thumbnail }}" @endif>
+                                <source src="{{ route('videos.media', $video) }}" type="{{ $video->mime_type ?? 'video/mp4' }}">
+                            </video>
+                        @else
+                            <div class="flex h-full items-center justify-center p-6 text-center text-sm text-on-color/70">
+                                {{ $video->storage_deleted_at ? 'Original removed from storage after publishing.' : 'Video not uploaded yet.' }}
+                            </div>
+                        @endif
+                        <div class="pointer-events-none absolute top-3 left-1/2 h-1.5 w-16 -translate-x-1/2 rounded-full bg-white/30"></div>
+                        <div class="pointer-events-none absolute right-2.5 bottom-24 flex flex-col items-center gap-4 text-on-color drop-shadow">
+                            <x-icon name="heart" class="h-6 w-6" /><x-icon name="chat" class="h-6 w-6" /><x-icon name="send" class="h-6 w-6" />
+                        </div>
+                        @if($preview?->caption)
+                            <div class="pointer-events-none absolute inset-x-0 bottom-0 bg-linear-to-t from-black/80 via-black/40 to-transparent px-4 pt-10 pb-14 text-[12px] leading-snug text-on-color">
+                                <p class="line-clamp-3">{{ $preview->caption }}</p>
+                                @if($previewTags)<p class="mt-1 truncate font-medium opacity-90">{{ $previewTags }}</p>@endif
+                            </div>
+                        @endif
                     </div>
-                @endif
+                </div>
+                <p class="mt-2 text-center text-xs text-slate-500">Preview · {{ $preview ? ucfirst($preview->platform->value).' caption' : 'no caption yet' }}</p>
             </div>
 
             <div class="card card-body text-sm">
@@ -60,6 +80,7 @@
                 </form>
             </div>
 
+            @if($video->sources->isNotEmpty())
             <div class="card card-body text-sm">
                 <h2 class="card-title mb-2">Local copies ({{ $video->sources->count() }})</h2>
                 <ul class="space-y-1 text-xs">
@@ -73,14 +94,16 @@
                     <p class="help">The same file exists in several folders; it was uploaded and stored once.</p>
                 @endif
             </div>
+            @endif
         </div>
 
         <div class="space-y-6 lg:col-span-2">
             @foreach(\App\Enums\Platform::cases() as $platform)
+                @continue($platform === \App\Enums\Platform::YouTube && ! config('reelflow.youtube_enabled'))
                 @php($item = $content[$platform->value]['model'])
                 <div class="card">
-                    <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-5 py-3">
-                        <h2 class="card-title flex items-center gap-2"><x-platform :platform="$platform" /> {{ $platform->label() }}</h2>
+                    <div class="card-header flex-wrap">
+                        <h2 class="card-title flex items-center gap-2"><x-platform :platform="$platform" class="h-6 w-6 rounded-full" /> {{ $platform->label() }}</h2>
                         <div class="flex items-center gap-2 text-xs">
                             @if($item)
                                 <x-badge :value="$item->validation_status" />

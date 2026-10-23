@@ -20,7 +20,8 @@ class DashboardTest extends TestCase
 
     public function test_guests_are_redirected_to_login(): void
     {
-        $this->get('/')->assertRedirect(route('login'));
+        $this->get(route('dashboard'))->assertRedirect(route('login'));
+        $this->get('/')->assertOk()->assertSee('Request an invite');
         $this->get(route('videos.index'))->assertRedirect(route('login'));
         $this->get('/horizon')->assertRedirect(route('login'));
     }

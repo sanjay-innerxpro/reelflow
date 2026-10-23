@@ -1,63 +1,100 @@
 @props(['title' => null])
 <!DOCTYPE html>
-<html lang="en" class="h-full bg-slate-50">
+<html lang="en" class="h-full">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <meta name="robots" content="noindex, nofollow">
     <title>{{ $title ? $title.' · ' : '' }}{{ config('app.name') }}</title>
+    <x-theme-script />
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
-<body class="h-full text-slate-800 antialiased">
+<body class="h-full">
 @php
+    $user = auth()->user();
     $nav = [
-        'Overview' => [
-            ['Dashboard', 'dashboard', 'dashboard'],
-            ['Upload videos', 'uploads.index', 'uploads.*'],
-            ['Video library', 'videos.index', 'videos.*'],
-            ['Calendar', 'calendar', 'calendar'],
+        'Create' => [
+            ['Dashboard', 'dashboard', 'dashboard', 'home'],
+            ['Upload videos', 'uploads.index', 'uploads.*', 'upload'],
+            ['Video library', 'videos.index', 'videos.*', 'video'],
+            ['Calendar', 'calendar', 'calendar', 'calendar'],
         ],
         'Publishing' => [
-            ['History', 'posts.index', 'posts.index'],
-            ['Failed posts', 'posts.failed', 'posts.failed'],
-            ['Posting rules', 'rules.index', 'rules.*'],
-            ['Analytics', 'analytics', 'analytics'],
+            ['History', 'posts.index', 'posts.index', 'clock'],
+            ['Failed posts', 'posts.failed', 'posts.failed', 'warning'],
+            ['Posting rules', 'rules.index', 'rules.*', 'adjustments'],
+            ['Analytics', 'analytics', 'analytics', 'chart'],
         ],
         'Setup' => [
-            ['Connected accounts', 'accounts.index', 'accounts.*'],
-            ['Google Drive import', 'drive.index', 'drive.*'],
-            ['Sync devices', 'devices.index', 'devices.*'],
-            ['AI settings', 'settings.ai', 'settings.ai'],
-            ['Email settings', 'settings.email', 'settings.email'],
-            ['Activity log', 'logs.index', 'logs.index'],
+            ['Connected accounts', 'accounts.index', 'accounts.*', 'link'],
+            ['Google Drive import', 'drive.index', 'drive.*', 'cloud'],
+            ['Sync devices', 'devices.index', 'devices.*', 'computer'],
+            ['AI settings', 'settings.ai', 'settings.ai', 'sparkles'],
+            ['Email settings', 'settings.email', 'settings.email', 'envelope'],
+            ['Activity log', 'logs.index', 'logs.index', 'list'],
         ],
     ];
-    if (auth()->user()->isAdmin()) {
+    if ($user->isAdmin()) {
         $nav['Admin'] = [
-            ['Users', 'admin.users.index', 'admin.users.*'],
-            ['Failed jobs', 'logs.failed-jobs', 'logs.failed-jobs'],
+            ['Users', 'admin.users.index', 'admin.users.*', 'users'],
+            ['Failed jobs', 'logs.failed-jobs', 'logs.failed-jobs', 'alert'],
         ];
     }
     $failedCount = \App\Models\ScheduledPost::where('status', 'failed')->count();
+    $workspace = \App\Support\Tenancy\Tenant::workspace();
+    $storageUsed = $workspace ? \Illuminate\Support\Facades\Cache::remember('reelflow:storage-used:'.$workspace->id, 60, fn () => $workspace->storageUsedBytes()) : 0;
+    $storageLimit = $workspace?->storageLimitBytes();
+    $initials = collect(preg_split('/\s+/', trim($user->name)))->take(2)->map(fn ($p) => mb_substr($p, 0, 1))->implode('');
 @endphp
-<div class="min-h-full lg:flex">
-    <aside class="border-b border-slate-200 bg-white lg:fixed lg:inset-y-0 lg:w-60 lg:border-r lg:border-b-0">
-        <div class="flex h-14 items-center gap-2 px-5">
-            <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-sm font-bold text-white">RF</span>
-            <span class="font-semibold">{{ config('app.name') }}</span>
+
+<div class="min-h-full">
+    {{-- Mobile top bar --}}
+    <div class="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-slate-200 bg-white/90 px-4 backdrop-blur lg:hidden">
+        <button type="button" class="btn btn-ghost -ml-2 h-9 w-9 p-0" data-sidebar-open aria-label="Open menu"><x-icon name="menu" /></button>
+        <a href="{{ route('dashboard') }}" class="flex items-center gap-2 font-semibold">
+            <span class="brand-gradient flex h-7 w-7 items-center justify-center rounded-lg text-on-color"><x-icon name="play" class="h-4 w-4" /></span>
+            {{ config('app.name') }}
+        </a>
+    </div>
+
+    <div data-sidebar-backdrop class="fixed inset-0 z-40 hidden bg-slate-950/40 backdrop-blur-sm lg:hidden"></div>
+
+    <aside data-sidebar class="fixed inset-y-0 left-0 z-50 flex w-72 -translate-x-full flex-col border-r border-slate-200 bg-white transition-transform duration-200 lg:z-20 lg:w-64 lg:translate-x-0">
+        <div class="flex h-16 shrink-0 items-center justify-between px-5">
+            <a href="{{ route('dashboard') }}" class="flex items-center gap-2.5">
+                <span class="brand-gradient flex h-9 w-9 items-center justify-center rounded-xl text-on-color shadow-(--shadow-lift)"><x-icon name="play" class="h-5 w-5" /></span>
+                <span class="text-[15px] font-semibold tracking-tight text-slate-900">{{ config('app.name') }}</span>
+            </a>
+            <button type="button" class="btn btn-ghost h-8 w-8 p-0 lg:hidden" data-sidebar-close aria-label="Close menu"><x-icon name="x" /></button>
         </div>
-        <nav class="flex gap-4 overflow-x-auto px-3 pb-3 lg:block lg:space-y-5 lg:overflow-visible lg:pb-0">
+
+        @if($workspace)
+            <div class="mx-3 mb-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5">
+                <div class="truncate text-xs font-semibold text-slate-900">{{ $workspace->name }}</div>
+                <div class="mt-1.5 flex items-center justify-between text-[11px] text-slate-500">
+                    <span>Storage</span>
+                    <span>{{ \Illuminate\Support\Number::fileSize($storageUsed, 1) }} / {{ $storageLimit ? \Illuminate\Support\Number::fileSize($storageLimit) : 'unlimited' }}</span>
+                </div>
+                @if($storageLimit)
+                    @php($pct = min(100, round($storageUsed / $storageLimit * 100)))
+                    <div class="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-200"><div class="h-full rounded-full {{ $pct > 90 ? 'bg-red-500' : 'brand-gradient' }}" style="width: {{ $pct }}%"></div></div>
+                @endif
+            </div>
+        @endif
+
+        <nav class="flex-1 space-y-5 overflow-y-auto px-3 py-2">
             @foreach($nav as $section => $items)
-                <div class="shrink-0">
-                    <div class="hidden px-2 pb-1 text-[11px] font-semibold tracking-wider text-slate-400 uppercase lg:block">{{ $section }}</div>
-                    <ul class="flex gap-1 lg:block lg:space-y-0.5">
-                        @foreach($items as [$label, $route, $pattern])
+                <div>
+                    <div class="px-2.5 pb-1.5 text-[11px] font-semibold tracking-wider text-slate-400 uppercase">{{ $section }}</div>
+                    <ul class="space-y-0.5">
+                        @foreach($items as [$label, $route, $pattern, $icon])
                             <li>
-                                <a href="{{ route($route) }}" class="flex items-center justify-between rounded-md px-2 py-1.5 text-sm whitespace-nowrap {{ request()->routeIs($pattern) ? 'bg-indigo-50 font-medium text-indigo-700' : 'text-slate-600 hover:bg-slate-100' }}">
-                                    {{ $label }}
+                                <a href="{{ route($route) }}" class="nav-link" @if(request()->routeIs($pattern)) aria-current="page" @endif>
+                                    <x-icon :name="$icon" />
+                                    <span class="flex-1 truncate">{{ $label }}</span>
                                     @if($route === 'posts.failed' && $failedCount)
-                                        <span class="ml-2 rounded-full bg-red-100 px-1.5 text-xs font-medium text-red-700">{{ $failedCount }}</span>
+                                        <span class="rounded-full bg-red-100 px-1.5 py-0.5 text-[11px] font-semibold text-red-700">{{ $failedCount }}</span>
                                     @endif
                                 </a>
                             </li>
@@ -65,31 +102,48 @@
                     </ul>
                 </div>
             @endforeach
-            <div class="hidden border-t border-slate-200 pt-3 lg:block">
-                @if(config('reelflow.queue_mode') !== 'cron' && auth()->user()->isAdmin())
-                    <a href="{{ url(config('horizon.path', 'horizon')) }}" class="block rounded-md px-2 py-1.5 text-sm text-slate-600 hover:bg-slate-100">Queue monitor ↗</a>
-                @endif
-                <a href="{{ route('account') }}" class="block rounded-md px-2 py-1.5 text-sm text-slate-600 hover:bg-slate-100">Account &amp; password</a>
-                <form method="POST" action="{{ route('logout') }}" class="px-2 py-1.5">
+            @if(config('reelflow.queue_mode') !== 'cron' && $user->isAdmin())
+                <a href="{{ url(config('horizon.path', 'horizon')) }}" class="nav-link"><x-icon name="bolt" /> Queue monitor ↗</a>
+            @endif
+        </nav>
+
+        <div class="shrink-0 border-t border-slate-200 p-3">
+            <div class="flex items-center gap-3 rounded-xl px-2 py-2">
+                <span class="brand-gradient flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-on-color">{{ $initials }}</span>
+                <div class="min-w-0 flex-1">
+                    <div class="truncate text-sm font-medium text-slate-900">{{ $user->name }}</div>
+                    <div class="truncate text-xs text-slate-500">{{ $user->email }}</div>
+                </div>
+                <button type="button" class="btn btn-ghost h-8 w-8 p-0" data-theme-toggle aria-label="Switch light/dark theme" title="Light / dark">
+                    <x-icon name="moon" class="h-[18px] w-[18px] dark:hidden" /><x-icon name="sun" class="hidden h-[18px] w-[18px] dark:block" />
+                </button>
+            </div>
+            <div class="mt-1 grid grid-cols-2 gap-1">
+                <a href="{{ route('account') }}" class="nav-link justify-center text-xs"><x-icon name="user" class="h-4 w-4" /> Account</a>
+                <form method="POST" action="{{ route('logout') }}">
                     @csrf
-                    <button class="text-sm text-slate-500 hover:text-slate-800">Sign out ({{ auth()->user()->name }})</button>
+                    <button class="nav-link w-full justify-center text-xs"><x-icon name="logout" class="h-4 w-4" /> Sign out</button>
                 </form>
             </div>
-        </nav>
+        </div>
     </aside>
 
-    <main class="flex-1 lg:pl-60">
-        <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6">
+    <main class="lg:pl-64">
+        <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
             @isset($header)
-                <div class="mb-6 flex flex-wrap items-center justify-between gap-3">{{ $header }}</div>
+                <div class="page-header mb-6 flex flex-wrap items-center justify-between gap-3">{{ $header }}</div>
             @endisset
 
             @if(session('status'))
-                <div class="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{{ session('status') }}</div>
+                <div class="mb-5 flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                    <x-icon name="check-circle" class="mt-px h-5 w-5 shrink-0 text-emerald-600" />
+                    <span>{{ session('status') }}</span>
+                </div>
             @endif
             @if($errors->any())
-                <div class="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-                    <ul class="list-disc space-y-0.5 pl-5">
+                <div class="mb-5 flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+                    <x-icon name="alert" class="mt-px h-5 w-5 shrink-0 text-red-600" />
+                    <ul class="space-y-0.5">
                         @foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach
                     </ul>
                 </div>

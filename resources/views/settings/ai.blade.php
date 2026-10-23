@@ -26,6 +26,7 @@
             <button class="btn btn-primary">Save</button>
         </form>
 
+        @if(auth()->user()->isAdmin())
         <div class="card card-body h-fit text-sm">
             <h2 class="card-title mb-2">Provider (from .env)</h2>
             <dl class="grid grid-cols-2 gap-y-1">
@@ -39,6 +40,14 @@
             </dl>
             <p class="help">Free options: <strong>gemini</strong> (Google AI Studio free tier), <strong>groq</strong> (free tier) or <strong>ollama</strong> (self-hosted, no key). Free tiers have daily request limits; captions are generated once per video, so normal use stays well inside them. Cost is only estimated when AI_INPUT_COST_PER_MTOK / AI_OUTPUT_COST_PER_MTOK are set.</p>
         </div>
+        @else
+            @php($ws = \App\Support\Tenancy\Tenant::workspace())
+            <div class="card card-body h-fit text-sm">
+                <h2 class="card-title mb-2">Today's AI captions</h2>
+                <div class="text-3xl font-semibold tracking-tight text-slate-900">{{ $ws?->aiGenerationsToday() ?? 0 }}<span class="text-base font-normal text-slate-500"> / {{ $ws?->daily_ai_limit ?: '∞' }}</span></div>
+                <p class="help">Captions are written once per video. When the daily limit is reached, use “Generate captions” again tomorrow or write them yourself.</p>
+            </div>
+        @endif
     </div>
 
     <div class="card mt-6 overflow-x-auto">

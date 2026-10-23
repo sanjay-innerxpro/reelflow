@@ -18,8 +18,10 @@ use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\SocialAccountController;
 use App\Http\Controllers\UploadController;
 use App\Http\Controllers\VideoController;
+use App\Http\Controllers\WelcomeController;
 use Illuminate\Support\Facades\Route;
 
+Route::get('/', WelcomeController::class)->name('home');
 Route::get('health', HealthController::class)->middleware('throttle:60,1')->name('health');
 
 // Public pages required by Meta App Review and Google OAuth verification.
@@ -40,7 +42,7 @@ Route::middleware(['auth', 'auth.session', 'workspace'])->group(function () {
     Route::post('logout', [LoginController::class, 'logout'])->name('logout');
     Route::get('account', [AccountController::class, 'edit'])->name('account');
     Route::put('account/password', [AccountController::class, 'updatePassword'])->middleware('throttle:10,1')->name('account.password');
-    Route::get('/', DashboardController::class)->name('dashboard');
+    Route::get('dashboard', DashboardController::class)->name('dashboard');
 
     // Browser uploads (ZIP or video, chunked)
     Route::get('uploads', [UploadController::class, 'index'])->name('uploads.index');
