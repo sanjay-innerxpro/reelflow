@@ -25,7 +25,7 @@ class FfmpegMediaToolkit implements MediaToolkit
     public function thumbnail(string $path, string $outputPath, float $atSecond, int $width = 480): void
     {
         $this->run([
-            config('reelflow.media.ffmpeg_path'), '-y', '-v', 'error', '-ss', (string) max(0, $atSecond), '-i', $path,
+            config('reelflow.media.ffmpeg_path'), '-y', '-v', 'error', ...$this->threads(), '-ss', (string) max(0, $atSecond), '-i', $path,
             '-frames:v', '1', '-vf', "scale={$width}:-2", '-q:v', '3', $outputPath,
         ]);
 
@@ -44,7 +44,7 @@ class FfmpegMediaToolkit implements MediaToolkit
             $at = $duration > 0 ? ($duration / $count) * ($i + 0.5) : 0;
             $out = $outputDir.'/frame_'.$i.'.jpg';
             $this->run([
-                config('reelflow.media.ffmpeg_path'), '-y', '-v', 'error', '-ss', sprintf('%.2f', $at), '-i', $path,
+                config('reelflow.media.ffmpeg_path'), '-y', '-v', 'error', ...$this->threads(), '-ss', sprintf('%.2f', $at), '-i', $path,
                 '-frames:v', '1', '-vf', "scale={$width}:-2", '-q:v', '5', $out,
             ]);
             if (is_file($out) && filesize($out) > 0) {
@@ -58,9 +58,23 @@ class FfmpegMediaToolkit implements MediaToolkit
     public function extractAudio(string $path, string $outputPath, int $maxSeconds): void
     {
         $this->run([
-            config('reelflow.media.ffmpeg_path'), '-y', '-v', 'error', '-i', $path, '-t', (string) $maxSeconds,
+            config('reelflow.media.ffmpeg_path'), '-y', '-v', 'error', ...$this->threads(), '-i', $path, '-t', (string) $maxSeconds,
             '-vn', '-ac', '1', '-ar', '16000', '-b:a', '48k', $outputPath,
         ]);
+    }
+
+    /**
+     * FFMPEG_THREADS limits FFmpeg's threads. Shared hosting caps processes
+     * per account, and FFmpeg otherwise starts one thread per (shared) CPU
+     * core, failing with "pthread_create() failed: Resource temporarily unavailable".
+     *
+     * @return array<int, string>
+     */
+    private function threads(): array
+    {
+        $threads = config('reelflow.media.threads');
+
+        return $threads ? ['-threads', (string) $threads, '-filter_threads', (string) $threads] : [];
     }
 
     /**

@@ -84,6 +84,7 @@ return [
         'agent_max_upload_kb' => 2048,
         'ffmpeg_path' => env('FFMPEG_PATH') ?: 'ffmpeg',
         'ffprobe_path' => env('FFPROBE_PATH') ?: 'ffprobe',
+        'threads' => is_numeric(env('FFMPEG_THREADS')) ? (int) env('FFMPEG_THREADS') : null, // 1 on shared hosting
         'timeout_seconds' => (int) env('FFMPEG_TIMEOUT', 300),
         'min_duration_seconds' => (float) env('VIDEO_MIN_DURATION', 3),
         'max_duration_seconds' => (float) env('VIDEO_MAX_DURATION', 900),
