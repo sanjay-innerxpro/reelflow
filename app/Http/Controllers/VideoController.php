@@ -19,6 +19,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class VideoController extends Controller
 {
@@ -98,13 +99,11 @@ class VideoController extends Controller
         return redirect()->away($storage->temporaryUrl($video, now()->addMinutes(30)));
     }
 
-    public function thumbnail(Video $video, VideoStorage $storage): RedirectResponse
+    public function thumbnail(Video $video, VideoStorage $storage): StreamedResponse|RedirectResponse
     {
         Gate::authorize('view', $video);
-        $url = $storage->thumbnailUrl($video, 60);
-        abort_unless($url, 404);
 
-        return redirect()->away($url);
+        return $storage->thumbnailResponse($video);
     }
 
     public function reprocess(Video $video, ActivityLogger $activity): RedirectResponse

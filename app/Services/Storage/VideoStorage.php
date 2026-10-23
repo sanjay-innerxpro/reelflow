@@ -6,9 +6,11 @@ use App\Models\Video;
 use Carbon\CarbonInterface;
 use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Filesystem\FilesystemAdapter;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use RuntimeException;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
  * Single entry point for private video storage. Works with any Laravel disk;
@@ -99,6 +101,41 @@ class VideoStorage
         }
 
         return $disk->temporaryUrl($key ?? $video->storage_key, $expiresAt);
+    }
+
+    /**
+     * Serve a thumbnail to the browser.
+     *
+     * Local disks are streamed through the app rather than redirected to a
+     * signed /private-media/<key>.jpg URL: some hosts (Hostinger's LiteSpeed
+     * layer among them) intercept image extensions and answer 404 before PHP
+     * runs, which silently breaks every thumbnail. Remote disks keep the
+     * redirect so the object store carries the bytes.
+     */
+    public function thumbnailResponse(Video $video): StreamedResponse|RedirectResponse
+    {
+        abort_unless($video->thumbnail_key, 404);
+
+        if (! $this->isLocal($video->thumbnail_disk)) {
+            $url = $this->thumbnailUrl($video);
+            abort_unless($url, 404);
+
+            return redirect()->away($url);
+        }
+
+        $disk = $this->disk($video->thumbnail_disk);
+        abort_unless($disk->exists($video->thumbnail_key), 404);
+
+        return $disk->response($video->thumbnail_key, 'thumbnail.jpg', [
+            'Content-Type' => 'image/jpeg',
+            // Private: the browser may reuse it, shared caches may not.
+            'Cache-Control' => 'private, max-age=86400',
+        ]);
+    }
+
+    public function isLocal(?string $name = null): bool
+    {
+        return config('filesystems.disks.'.($name ?? $this->defaultDisk()).'.driver') === 'local';
     }
 
     public function thumbnailUrl(Video $video, int $minutes = 60): ?string
