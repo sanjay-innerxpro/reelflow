@@ -30,13 +30,22 @@ class MetaOAuthService
 
     public function authorizationUrl(string $state): string
     {
-        return rtrim(config('reelflow.meta.dialog_url'), '/').'/'.config('reelflow.meta.graph_version').'/dialog/oauth?'.http_build_query([
+        $params = [
             'client_id' => config('reelflow.meta.app_id'),
             'redirect_uri' => config('reelflow.meta.redirect_uri'),
             'state' => $state,
             'response_type' => 'code',
-            'scope' => implode(',', config('reelflow.meta.scopes')),
-        ]);
+        ];
+
+        if ($configId = config('reelflow.meta.config_id')) {
+            // Login for Business: permissions come from the saved configuration.
+            $params['config_id'] = $configId;
+            $params['override_default_response_type'] = 'true';
+        } else {
+            $params['scope'] = implode(',', config('reelflow.meta.scopes'));
+        }
+
+        return rtrim(config('reelflow.meta.dialog_url'), '/').'/'.config('reelflow.meta.graph_version').'/dialog/oauth?'.http_build_query($params);
     }
 
     /**

@@ -36,6 +36,17 @@ class OAuthTest extends TestCase
         $this->assertStringContainsString('pages_manage_posts', $query['scope']);
     }
 
+    public function test_login_for_business_configuration_replaces_scope(): void
+    {
+        config(['reelflow.meta.config_id' => '987654321']);
+
+        $location = $this->actingAs($this->user)->get(route('accounts.meta.connect'))->headers->get('Location');
+        parse_str(parse_url($location, PHP_URL_QUERY), $query);
+
+        $this->assertSame('987654321', $query['config_id']);
+        $this->assertArrayNotHasKey('scope', $query);
+    }
+
     public function test_callback_with_wrong_state_is_rejected(): void
     {
         Http::fake();

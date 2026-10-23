@@ -194,6 +194,9 @@ return [
         'app_id' => env('META_APP_ID'),
         'app_secret' => env('META_APP_SECRET'),
         'redirect_uri' => env('META_REDIRECT_URI'),
+        // Facebook Login for Business: the Configuration ID from the app's
+        // Login for Business → Configurations page. When set it replaces "scope".
+        'config_id' => env('META_CONFIG_ID') ?: null,
         'graph_version' => env('META_GRAPH_VERSION', 'v23.0'),
         'graph_url' => env('META_GRAPH_URL', 'https://graph.facebook.com'),
         'rupload_url' => env('META_RUPLOAD_URL', 'https://rupload.facebook.com'),
