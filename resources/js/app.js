@@ -31,3 +31,9 @@ document.addEventListener('click', (event) => {
         button.textContent = 'Copied';
     }
 });
+
+// Upload page (ZIPs and videos in chunks).
+const uploader = document.querySelector('[data-uploader]');
+if (uploader) {
+    import('./uploader.js').then(({ initUploader }) => initUploader(uploader));
+}

@@ -14,6 +14,7 @@
     $nav = [
         'Overview' => [
             ['Dashboard', 'dashboard', 'dashboard'],
+            ['Upload videos', 'uploads.index', 'uploads.*'],
             ['Video library', 'videos.index', 'videos.*'],
             ['Calendar', 'calendar', 'calendar'],
         ],
@@ -65,7 +66,7 @@
                 </div>
             @endforeach
             <div class="hidden border-t border-slate-200 pt-3 lg:block">
-                @if(config('reelflow.queue_mode') !== 'cron')
+                @if(config('reelflow.queue_mode') !== 'cron' && auth()->user()->isAdmin())
                     <a href="{{ url(config('horizon.path', 'horizon')) }}" class="block rounded-md px-2 py-1.5 text-sm text-slate-600 hover:bg-slate-100">Queue monitor ↗</a>
                 @endif
                 <a href="{{ route('account') }}" class="block rounded-md px-2 py-1.5 text-sm text-slate-600 hover:bg-slate-100">Account &amp; password</a>

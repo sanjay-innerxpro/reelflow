@@ -1,6 +1,7 @@
 <x-layout title="Video library">
     <x-slot:header>
         <h1 class="text-xl font-semibold">Video library <span class="text-base font-normal text-slate-500">({{ $videos->total() }})</span></h1>
+        <a href="{{ route('uploads.index') }}" class="btn btn-primary">Upload videos</a>
     </x-slot:header>
 
     <form method="GET" class="card card-body mb-4 grid gap-3 md:grid-cols-6">

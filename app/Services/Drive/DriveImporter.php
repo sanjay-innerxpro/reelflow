@@ -2,17 +2,14 @@
 
 namespace App\Services\Drive;
 
-use App\Enums\VideoStatus;
-use App\Jobs\ProcessVideoJob;
 use App\Models\DriveFile;
 use App\Models\DriveFolder;
 use App\Models\Video;
 use App\Models\Workspace;
 use App\Services\Storage\VideoStorage;
 use App\Services\Sync\PathSanitizer;
-use App\Services\Sync\UploadService;
-use App\Support\ActivityLogger;
-use Illuminate\Database\UniqueConstraintViolationException;
+use App\Services\Uploads\IngestResult;
+use App\Services\Uploads\VideoIngest;
 use Throwable;
 
 /**
@@ -27,8 +24,7 @@ class DriveImporter
     public function __construct(
         private readonly GoogleDriveClient $drive,
         private readonly VideoStorage $storage,
-        private readonly ActivityLogger $activity,
-        private readonly UploadService $uploads,
+        private readonly VideoIngest $ingest,
     ) {}
 
     /**
@@ -89,75 +85,14 @@ class DriveImporter
             }
 
             $this->drive->download($file->file_id, $tmp);
+            $result = $this->ingest->store($tmp, $file->name, PathSanitizer::label($file->folder->name), "Google Drive folder {$file->folder->name}");
 
-            $size = (int) filesize($tmp);
-            if ($size <= 0 || $size > $maxBytes) {
-                return $this->finish($file, DriveFile::SKIPPED, error: $size <= 0 ? 'The downloaded file is empty.' : 'Larger than UPLOAD_MAX_FILE_SIZE_MB.');
-            }
-
-            $mime = (new \finfo(FILEINFO_MIME_TYPE))->file($tmp) ?: 'application/octet-stream';
-            if (! str_starts_with($mime, 'video/') && $mime !== 'application/octet-stream') {
-                return $this->finish($file, DriveFile::SKIPPED, error: "Not a video file ({$mime}).");
-            }
-
-            $checksum = hash_file('sha256', $tmp);
-            $existing = Video::where('checksum_sha256', $checksum)->first();
-            if ($existing && ! $this->uploads->needsUpload($existing)) {
-                return $this->finish($file, DriveFile::DUPLICATE, $existing);
-            }
-            if (! $workspace->hasStorageFor($size)) {
-                $file->decrement('attempts');
-
-                return $this->overQuota($file, $workspace);
-            }
-
-            $extension = strtolower(pathinfo($file->name, PATHINFO_EXTENSION)) ?: 'mp4';
-            $key = $this->storage->keyFor($workspace->id, $checksum, $extension);
-            $stream = fopen($tmp, 'rb');
-            try {
-                $this->storage->putStream($key, $stream, null, $mime);
-            } finally {
-                if (is_resource($stream)) {
-                    fclose($stream);
-                }
-            }
-
-            if ($existing) {
-                // Registered by the sync agent but its upload never finished:
-                // complete it with the Drive copy instead of adding a duplicate.
-                $existing->transitionTo(VideoStatus::Uploaded, [
-                    'storage_disk' => $this->storage->defaultDisk(),
-                    'storage_key' => $key,
-                    'mime_type' => $mime,
-                    'uploaded_at' => now(),
-                    'processing_error' => null,
-                ], 'Completed from Google Drive');
-                ProcessVideoJob::dispatch($existing->id);
-
-                return $this->finish($file, DriveFile::IMPORTED, $existing);
-            }
-
-            try {
-                $video = Video::create([
-                    'original_filename' => mb_substr(basename($file->name), 0, 255),
-                    'folder' => PathSanitizer::label($file->folder->name),
-                    'checksum_sha256' => $checksum,
-                    'size_bytes' => $size,
-                    'storage_disk' => $this->storage->defaultDisk(),
-                    'storage_key' => $key,
-                    'mime_type' => $mime,
-                    'status' => VideoStatus::Uploaded,
-                    'uploaded_at' => now(),
-                ]);
-            } catch (UniqueConstraintViolationException) {
-                // Same file imported concurrently (e.g. by the sync agent).
-                return $this->finish($file, DriveFile::DUPLICATE, Video::where('checksum_sha256', $checksum)->first());
-            }
-
-            $this->activity->log('video.imported', $video, "Imported from Google Drive folder {$file->folder->name}");
-            ProcessVideoJob::dispatch($video->id);
-
-            return $this->finish($file, DriveFile::IMPORTED, $video);
+            return match ($result->status) {
+                IngestResult::ADDED => $this->finish($file, DriveFile::IMPORTED, $result->video),
+                IngestResult::DUPLICATE => $this->finish($file, DriveFile::DUPLICATE, $result->video),
+                IngestResult::QUOTA => tap($this->overQuota($file, $workspace), fn () => $file->decrement('attempts')),
+                default => $this->finish($file, DriveFile::SKIPPED, error: $result->message),
+            };
         } catch (Throwable $e) {
             $final = $file->attempts >= config('reelflow.drive.max_attempts');
 

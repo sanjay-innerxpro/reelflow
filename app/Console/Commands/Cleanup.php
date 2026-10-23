@@ -7,11 +7,13 @@ use App\Enums\PostStatus;
 use App\Enums\UploadSessionStatus;
 use App\Enums\VideoStatus;
 use App\Models\SocialAccount;
+use App\Models\UploadBatch;
 use App\Models\UploadSession;
 use App\Models\Video;
 use App\Services\Media\PlatformRequirements;
 use App\Services\Storage\VideoStorage;
 use App\Services\Sync\UploadService;
+use App\Services\Uploads\BatchUploadService;
 use App\Support\ActivityLogger;
 use App\Support\Settings;
 use App\Support\Tenancy\Tenant;
@@ -24,7 +26,7 @@ class Cleanup extends Command
 
     protected $description = 'Remove expired upload sessions, temp files and (if configured) originals that are safe to delete';
 
-    public function handle(UploadService $uploads, VideoStorage $storage, ActivityLogger $activity, PlatformRequirements $requirements, Settings $settings): int
+    public function handle(UploadService $uploads, BatchUploadService $batchUploads, VideoStorage $storage, ActivityLogger $activity, PlatformRequirements $requirements, Settings $settings): int
     {
         $dry = (bool) $this->option('dry-run');
 
@@ -37,6 +39,16 @@ class Cleanup extends Command
             }
         }
         $this->line("Expired upload sessions: {$expired->count()}");
+
+        // Browser uploads abandoned before completion keep chunks on disk.
+        $batches = UploadBatch::where('status', UploadBatch::UPLOADING)->where('expires_at', '<', now())->get();
+        foreach ($batches as $batch) {
+            if (! $dry) {
+                $batchUploads->discardChunks($batch);
+                $batch->update(['status' => UploadBatch::EXPIRED]);
+            }
+        }
+        $this->line("Expired browser uploads: {$batches->count()}");
 
         $tmp = storage_path('app/tmp');
         $old = 0;

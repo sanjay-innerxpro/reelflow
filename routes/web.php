@@ -16,6 +16,7 @@ use App\Http\Controllers\PostController;
 use App\Http\Controllers\PostingRuleController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\SocialAccountController;
+use App\Http\Controllers\UploadController;
 use App\Http\Controllers\VideoController;
 use Illuminate\Support\Facades\Route;
 
@@ -40,6 +41,13 @@ Route::middleware(['auth', 'auth.session', 'workspace'])->group(function () {
     Route::get('account', [AccountController::class, 'edit'])->name('account');
     Route::put('account/password', [AccountController::class, 'updatePassword'])->middleware('throttle:10,1')->name('account.password');
     Route::get('/', DashboardController::class)->name('dashboard');
+
+    // Browser uploads (ZIP or video, chunked)
+    Route::get('uploads', [UploadController::class, 'index'])->name('uploads.index');
+    Route::post('uploads', [UploadController::class, 'store'])->middleware('throttle:30,1')->name('uploads.store');
+    Route::get('uploads/{batch}', [UploadController::class, 'show'])->whereUuid('batch')->name('uploads.show');
+    Route::put('uploads/{batch}/chunks/{index}', [UploadController::class, 'chunk'])->whereUuid('batch')->whereNumber('index')->middleware('throttle:300,1')->name('uploads.chunk');
+    Route::post('uploads/{batch}/complete', [UploadController::class, 'complete'])->whereUuid('batch')->name('uploads.complete');
 
     // Video library & content studio
     Route::get('videos', [VideoController::class, 'index'])->name('videos.index');

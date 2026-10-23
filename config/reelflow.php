@@ -57,6 +57,18 @@ return [
         'daily_ai_limit' => is_numeric(env('WORKSPACE_DAILY_AI_LIMIT')) ? (int) env('WORKSPACE_DAILY_AI_LIMIT') : 50,
     ],
 
+    // Browser uploads (Upload page): a ZIP of videos or single video files.
+    'web_uploads' => [
+        'max_mb' => is_numeric(env('WEB_UPLOAD_MAX_MB')) ? (int) env('WEB_UPLOAD_MAX_MB') : 200,
+        'max_videos' => is_numeric(env('WEB_UPLOAD_MAX_VIDEOS')) ? (int) env('WEB_UPLOAD_MAX_VIDEOS') : 20,
+        'chunk_mb' => is_numeric(env('WEB_UPLOAD_CHUNK_MB')) ? (int) env('WEB_UPLOAD_CHUNK_MB') : 4,
+        'open_per_workspace' => 10,
+        'expire_hours' => 24,
+        // Zip-bomb guards: total unpacked size and per-file compression ratio.
+        'max_unpacked_mb' => 400,
+        'max_compression_ratio' => 20,
+    ],
+
     'devices' => [
         'offline_after_minutes' => (int) env('SYNC_DEVICE_OFFLINE_MINUTES', 30),
         'token_prefix' => 'rfd_',
