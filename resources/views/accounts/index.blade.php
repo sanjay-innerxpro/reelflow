@@ -15,10 +15,10 @@
         <div class="card card-body mb-6 text-sm">
             <h2 class="card-title mb-2">Platform credentials needed</h2>
             @unless($metaConfigured)
-                <p>• <strong>Meta</strong>: set <code>META_APP_ID</code>, <code>META_APP_SECRET</code> and <code>META_REDIRECT_URI</code> (= <code>{{ route('accounts.meta.callback') }}</code>) in the server <code>.env</code>.</p>
+                <p>• <strong>Meta</strong>: add the App ID and App secret in <a href="{{ route('admin.credentials') }}#meta" class="link">Admin → Credentials</a>. Redirect URI to register: <code>{{ config('reelflow.meta.redirect_uri') }}</code></p>
             @endunless
             @if($youtubeEnabled && ! $googleConfigured)
-                <p>• <strong>Google</strong>: set <code>GOOGLE_CLIENT_ID</code>, <code>GOOGLE_CLIENT_SECRET</code> and <code>GOOGLE_REDIRECT_URI</code> (= <code>{{ route('accounts.google.callback') }}</code>).</p>
+                <p>• <strong>Google</strong>: add the Client ID and Client secret in <a href="{{ route('admin.credentials') }}#google" class="link">Admin → Credentials</a>. Redirect URI to register: <code>{{ config('reelflow.google.redirect_uri') }}</code></p>
             @endif
             <p class="help">See README → "Meta developer app" and "Google Cloud / YouTube API".</p>
         </div>

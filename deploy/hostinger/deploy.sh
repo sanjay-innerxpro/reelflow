@@ -102,6 +102,8 @@ if grep -qE '^DB_(PASSWORD=change-me|DATABASE=u000000000_)' "$SHARED/.env"; then
 fi
 
 "$PHP" artisan migrate --force
+# First deploy with this feature: copy the credentials .env sets into Admin → Credentials.
+"$PHP" artisan reels:import-credentials --once
 ln -sfn "$RELEASE" "$APP_DIR/current"
 "$PHP" "$APP_DIR/current/artisan" optimize >/dev/null
 

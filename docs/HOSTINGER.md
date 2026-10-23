@@ -74,7 +74,19 @@ Then open **Setup → Google Drive import** and add a Drive folder link. Share t
 
 ## 6. Add credentials when ready
 
-Edit `APP_DIR/shared/.env`:
+Sign in as the admin and open **Admin → Credentials**. If `APP_DIR/shared/.env` already holds credentials, the first deploy with this page copies them in (`artisan reels:import-credentials --once`), so the page starts filled in; the **Import from .env** button does the same later for anything not saved yet. Each platform has its own section:
+
+| Section | What to enter |
+|---|---|
+| Facebook & Instagram | App ID and App secret from your Meta app |
+| YouTube | OAuth Client ID and Client secret, and turn YouTube publishing on |
+| AI captions | Provider and API key (free Gemini key from <https://aistudio.google.com/apikey>); extra keys on more lines are spares |
+| Google Drive import | Optional Drive API key |
+| Email (SMTP) | `smtp.hostinger.com`, port 465, SSL, your mailbox and its password, then set Sending to SMTP |
+
+Click **Save credentials**, then **Test saved values** in each section. The page shows the redirect URIs to register in the Meta and Google consoles; they default to `APP_URL/oauth/meta/callback` and `APP_URL/oauth/google/callback`.
+
+Values saved here are encrypted with `APP_KEY`, take effect immediately (no `optimize` needed) and take precedence over `.env`. A field left empty falls back to `.env`, so the `.env` variables still work:
 
 | Feature | Variables |
 |---|---|
@@ -83,7 +95,7 @@ Edit `APP_DIR/shared/.env`:
 | Facebook / Instagram | `META_APP_ID`, `META_APP_SECRET`, `META_REDIRECT_URI=https://reels.yourdomain.com/oauth/meta/callback` |
 | YouTube | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI=https://reels.yourdomain.com/oauth/google/callback` |
 
-Then apply the changes:
+After editing `.env`, apply the changes:
 
 ```bash
 /opt/alt/php83/usr/bin/php ~/domains/reels.yourdomain.com/reelflow/current/artisan optimize

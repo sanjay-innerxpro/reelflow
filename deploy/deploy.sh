@@ -43,6 +43,7 @@ sudo -u www-data "$RELEASE/deploy/backup.sh" || echo "WARNING: pre-deploy backup
 
 ln -sfn "$RELEASE" "$BASE/current"
 artisan migrate --force
+artisan reels:import-credentials --once
 artisan optimize
 systemctl reload php8.3-fpm
 # Horizon lets running jobs finish (stopwaitsecs) and Supervisor restarts it.

@@ -111,25 +111,25 @@ class SystemCheck
             'mail' => $this->check('Email', function () use ($production) {
                 $recipients = $this->settings->recipients();
                 if (config('mail.default') === 'log' || config('mail.default') === 'array') {
-                    return [$production ? self::WARN : self::OK, 'MAIL_MAILER='.config('mail.default').' (emails are not sent) — add SMTP credentials (Gmail App Password or your hosting mailbox)'];
+                    return [$production ? self::WARN : self::OK, 'Mailer "'.config('mail.default').'" does not send emails: add SMTP details in Admin → Credentials (Gmail App Password or your hosting mailbox)'];
                 }
                 if (config('mail.default') === 'smtp' && blank(config('mail.mailers.smtp.password'))) {
-                    return [self::WARN, 'SMTP password missing (MAIL_PASSWORD)'];
+                    return [self::WARN, 'SMTP password missing (Admin → Credentials)'];
                 }
 
                 return $recipients ? [self::OK, 'SMTP to '.implode(', ', $recipients)] : [self::WARN, 'No notification recipients (Email settings)'];
             }),
             'ai' => $this->check('AI captions', fn () => match (true) {
-                config('reelflow.ai.provider') === 'none' => [self::WARN, 'Disabled (AI_PROVIDER=none): captions must be written manually'],
-                ! $this->ai->isConfigured() => [self::WARN, 'AI_PROVIDER='.config('reelflow.ai.provider').' is missing AI_API_KEY / AI_MODEL'],
+                config('reelflow.ai.provider') === 'none' => [self::WARN, 'Disabled (provider "none"): captions must be written manually'],
+                ! $this->ai->isConfigured() => [self::WARN, 'Provider "'.config('reelflow.ai.provider').'" is missing an API key or model (Admin → Credentials)'],
                 default => [self::OK, config('reelflow.ai.provider').($this->ai->isFree() === false ? ' (paid)' : ' (free)')],
             }),
             'meta' => $this->check('Meta app (Facebook/Instagram)', fn () => $this->meta->isConfigured()
                 ? [self::OK, 'Configured, callback '.config('reelflow.meta.redirect_uri')]
-                : [self::WARN, 'Add META_APP_ID, META_APP_SECRET, META_REDIRECT_URI']),
+                : [self::WARN, 'Add the App ID and App secret in Admin → Credentials']),
             'google' => $this->check('Google app (YouTube)', fn () => $this->google->isConfigured()
                 ? [self::OK, 'Configured, callback '.config('reelflow.google.redirect_uri')]
-                : [self::WARN, 'Add GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI']),
+                : [self::WARN, 'Add the Client ID and Client secret in Admin → Credentials']),
             'accounts' => $this->check('Connected accounts', function () {
                 $connected = SocialAccount::where('status', 'connected')->count();
                 $enabled = SocialAccount::where('status', 'connected')->whereHas('postingRule', fn ($q) => $q->where('enabled', true))->count();

@@ -126,7 +126,7 @@ class OverviewController extends Controller
             str_contains($text, 'schema validation') || str_contains($text, 'not valid json') || str_contains($text, 'json object') || str_contains($text, 'missing') => ['Unusable answer shape', 'The model ignored the JSON format. Try another model, or AI_JSON_MODE=json_schema.'],
             str_contains($text, 'no frames') => ['No frames extracted', 'FFmpeg could not read the video, or the sync agent sent no frames.'],
             str_contains($text, 'declined') => ['Model declined the video', 'The model refused to describe this content; write the captions by hand.'],
-            str_contains($text, 'api_key') || str_contains($text, 'unauthor') || str_contains($text, '401') || str_contains($text, '403') => ['Key rejected', 'Check AI_API_KEY and that the model is enabled for it.'],
+            str_contains($text, 'api_key') || str_contains($text, 'unauthor') || str_contains($text, '401') || str_contains($text, '403') => ['Key rejected', 'Check the AI API keys in Admin → Credentials and that the model is enabled for them.'],
             default => ['Other', 'Open the generation to see the provider error in full.'],
         };
     }

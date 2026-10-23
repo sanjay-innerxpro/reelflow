@@ -40,6 +40,7 @@
         $nav['Admin'] = [
             ['Overview', 'admin.overview', 'admin.overview', 'chart'],
             ['Users', 'admin.users.index', 'admin.users.*', 'users'],
+            ['Credentials', 'admin.credentials', 'admin.credentials*', 'key'],
             ['Failed jobs', 'logs.failed-jobs', 'logs.failed-jobs', 'alert'],
         ];
     }

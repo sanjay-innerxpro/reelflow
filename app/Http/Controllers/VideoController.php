@@ -123,7 +123,7 @@ class VideoController extends Controller
     {
         Gate::authorize('update', $video);
         if (! $ai->isConfigured()) {
-            return back()->withErrors(['ai' => 'No AI provider is configured. Set AI_PROVIDER and AI_API_KEY in the server environment.']);
+            return back()->withErrors(['ai' => 'No AI provider is configured. An administrator can add an AI API key in Admin → Credentials.']);
         }
         if (! $video->hasStoredFile() || ! $video->duration_seconds) {
             return back()->withErrors(['ai' => 'The video must be uploaded and processed first.']);

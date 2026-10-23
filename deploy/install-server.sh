@@ -144,6 +144,7 @@ chown -R www-data:www-data bootstrap/cache
 grep -qE '^APP_KEY=base64:' "$SHARED/.env" || php artisan key:generate --force
 ln -sfn "$RELEASE" "$BASE/current"
 artisan migrate --force
+artisan reels:import-credentials --once
 artisan optimize
 
 log "nginx"

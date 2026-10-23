@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AccountController;
+use App\Http\Controllers\Admin\CredentialController as AdminCredentialController;
 use App\Http\Controllers\Admin\OverviewController as AdminOverviewController;
 use App\Http\Controllers\Admin\UserController as AdminUserController;
 use App\Http\Controllers\AiContentController;
@@ -126,6 +127,10 @@ Route::middleware(['auth', 'auth.session', 'workspace'])->group(function () {
         Route::put('users/{user}', [AdminUserController::class, 'update'])->name('users.update');
         Route::post('users/{user}/invite', [AdminUserController::class, 'invite'])->name('users.invite');
         Route::post('users/{user}/suspend', [AdminUserController::class, 'suspend'])->name('users.suspend');
+        Route::get('credentials', [AdminCredentialController::class, 'edit'])->name('credentials');
+        Route::put('credentials', [AdminCredentialController::class, 'update'])->middleware('throttle:20,1')->name('credentials.update');
+        Route::post('credentials/import', [AdminCredentialController::class, 'import'])->middleware('throttle:10,1')->name('credentials.import');
+        Route::post('credentials/test/{group}', [AdminCredentialController::class, 'test'])->whereIn('group', ['meta', 'google', 'ai', 'mail'])->middleware('throttle:10,1')->name('credentials.test');
     });
     Route::get('logs', [LogController::class, 'index'])->name('logs.index');
     Route::middleware('admin')->group(function () {

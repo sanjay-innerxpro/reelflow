@@ -4,6 +4,7 @@ use App\Http\Middleware\AuthenticateDevice;
 use App\Http\Middleware\EnsureAdmin;
 use App\Http\Middleware\SecurityHeaders;
 use App\Http\Middleware\SetCurrentWorkspace;
+use App\Support\Credentials;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -29,7 +30,7 @@ return Application::configure(basePath: dirname(__DIR__))
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         // Never echo secrets from request bodies into exception reports.
-        $exceptions->dontFlash(['password', 'password_confirmation', 'current_password', 'token', 'smtp_password']);
+        $exceptions->dontFlash(['password', 'password_confirmation', 'current_password', 'token', 'smtp_password', ...Credentials::secretInputs()]);
 
         $exceptions->shouldRenderJsonWhen(fn (Request $request) => $request->is('api/*') || $request->expectsJson());
     })->create();

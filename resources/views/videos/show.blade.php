@@ -16,7 +16,7 @@
     </x-slot:header>
 
     @unless($aiConfigured)
-        <div class="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">AI captioning is not configured (AI_PROVIDER / AI_API_KEY). You can still write captions manually below.</div>
+        <div class="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">AI captioning is not configured (an administrator can add an AI API key in Admin → Credentials). You can still write captions manually below.</div>
     @endunless
 
     <div class="grid gap-6 lg:grid-cols-3">

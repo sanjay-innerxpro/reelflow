@@ -11,7 +11,7 @@
             The server downloads the folder's videos itself every 5 minutes (up to {{ $batch }} per run), so no computer needs to be on.
             In Google Drive, share the folder as <strong>Anyone with the link → Viewer</strong>. New videos added to the folder later are imported automatically;
             a video already in the library (same file) is never imported twice.
-            @unless($apiKey) Listing uses Drive's public folder page; set <code>GOOGLE_DRIVE_API_KEY</code> to use the official Drive API instead. @endunless
+            @unless($apiKey) Listing uses Drive's public folder page; an administrator can add a Drive API key in Admin → Credentials to use the official Drive API instead. @endunless
         </p>
     </form>
 

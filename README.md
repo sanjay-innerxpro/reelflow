@@ -152,6 +152,8 @@ Every setting is documented inline in [`.env.example`](.env.example). These are 
 - **Meta / Google**: app credentials and redirect URIs.
 - **SMTP**: the `MAIL_*` values.
 
+An admin can also set the platform credentials in the app under **Admin → Credentials**: the Meta and Google apps, the AI provider and keys, the Drive API key and SMTP. Those values are encrypted with `APP_KEY` in the `system_settings` table and take precedence over `.env`. A field left empty falls back to `.env`. Changes apply immediately, without `artisan optimize`, and each section has a **Test saved values** button. The deploy scripts run `artisan reels:import-credentials --once` after migrating, which copies every credential `.env` already sets into the page the first time; the **Import from .env** button does the same on demand. Secrets are shown masked (last four characters only).
+
 Runtime preferences live in the dashboard and are stored in the database, not in `.env`. These include notification recipients and toggles, AI language/audience/tone, approval mode, cross-posting and the global pause.
 
 ---
@@ -242,7 +244,7 @@ AI improves relevance and consistency; it does not promise reach.
 
 1. Create an app at <https://developers.facebook.com/apps> of type **Business**, and add the **Facebook Login for Business** product.
 2. Under **Valid OAuth Redirect URIs**, add `https://YOUR_DOMAIN/oauth/meta/callback`.
-3. Put the app ID and secret into `META_APP_ID` and `META_APP_SECRET`, and set `META_REDIRECT_URI`.
+3. Enter the app ID and secret in **Admin → Credentials** (or set `META_APP_ID` and `META_APP_SECRET` in `.env`). The redirect URI defaults to `APP_URL/oauth/meta/callback`; **Test saved values** checks the pair with Meta.
 4. ReelFlow requests these permissions (`config/reelflow.php → meta.scopes`):
 
    | Permission | Why |
@@ -267,7 +269,7 @@ Facebook Reels use the `/{page-id}/video_reels` start → upload → finish flow
 1. In <https://console.cloud.google.com>, create a project and enable **YouTube Data API v3**.
 2. Configure the **OAuth consent screen**: External, with scopes `youtube.upload` and `youtube.readonly`. Use `https://YOUR_DOMAIN/privacy` and `https://YOUR_DOMAIN/terms` as the privacy-policy and terms URLs; ReelFlow serves these pages. While it is in **Testing**, add your Google account as a test user. In Testing mode, Google refresh tokens expire after 7 days, so for unattended use switch the app to **In production**. For your own channel you don't need Google's verification: an unverified production app can be used by up to 100 accounts, and you click through the "Google hasn't verified this app" screen once when connecting. Verification (also free) is only needed for wider use.
 3. Create an **OAuth client ID** of type Web application, with the authorised redirect URI `https://YOUR_DOMAIN/oauth/google/callback`.
-4. Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `GOOGLE_REDIRECT_URI`.
+4. Enter the client ID and secret in **Admin → Credentials** (or set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `.env`), and turn YouTube publishing on there once the project has upload quota.
 5. **API audit:** videos uploaded through projects that have not passed YouTube's API compliance audit are locked to **private**. Request the audit or a quota extension through Google's *YouTube API Services – Audit and Quota Extension* form.
 6. In ReelFlow, open **Connected accounts → Connect YouTube**. ReelFlow uses authorisation code with PKCE and offline access, and refreshes tokens automatically.
 
@@ -333,7 +335,7 @@ The ReelFlow tasks use `onOneServer()` (a Redis cache lock). Dispatch, planning 
 
 ## 13. Email
 
-Configure SMTP with `MAIL_*`. The free option is Gmail: turn on 2-Step Verification, create an **App Password** at <https://myaccount.google.com/apppasswords>, then use `MAIL_HOST=smtp.gmail.com`, `MAIL_PORT=587`, your Gmail address as `MAIL_USERNAME` and `MAIL_FROM_ADDRESS`, and the 16-character app password as `MAIL_PASSWORD`. Brevo's free plan (`smtp-relay.brevo.com`) also works. Under **Email settings**:
+Configure SMTP in **Admin → Credentials → Email (SMTP)**, or with `MAIL_*` in `.env`. The free option is Gmail: turn on 2-Step Verification, create an **App Password** at <https://myaccount.google.com/apppasswords>, then use `MAIL_HOST=smtp.gmail.com`, `MAIL_PORT=587`, your Gmail address as `MAIL_USERNAME` and `MAIL_FROM_ADDRESS`, and the 16-character app password as `MAIL_PASSWORD`. Brevo's free plan (`smtp-relay.brevo.com`) also works. Under **Email settings**:
 
 - recipients and per-type toggles (success, failure, account problems, agent offline, repeated upload failures, daily summary)
 - **Validate SMTP connection** connects and authenticates without sending anything

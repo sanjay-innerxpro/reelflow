@@ -31,7 +31,10 @@
         <div class="space-y-6">
             @if(auth()->user()->isAdmin())
             <div class="card card-body text-sm">
-                <h2 class="card-title mb-2">Mail transport (from .env)</h2>
+                <div class="mb-2 flex items-center justify-between gap-2">
+                    <h2 class="card-title">Mail transport</h2>
+                    <a href="{{ route('admin.credentials') }}#mail" class="link text-xs">Change SMTP</a>
+                </div>
                 <dl class="grid grid-cols-2 gap-y-1">
                     <dt class="text-slate-500">Mailer</dt><dd>{{ $mail['mailer'] }}</dd>
                     <dt class="text-slate-500">Host</dt><dd>{{ $mail['host'] ?? '—' }}:{{ $mail['port'] ?? '' }}</dd>
@@ -40,7 +43,7 @@
                     <dt class="text-slate-500">Password</dt><dd>{{ $mail['password_set'] ? 'set' : 'not set' }}</dd>
                     <dt class="text-slate-500">From</dt><dd class="truncate">{{ $mail['from'] }}</dd>
                 </dl>
-                @if($mail['mailer'] === 'log')<p class="help text-amber-700">MAIL_MAILER=log writes emails to the log file instead of sending them.</p>@endif
+                @if($mail['mailer'] === 'log')<p class="help text-amber-700">The "log" mailer writes emails to the log file instead of sending them.</p>@endif
                 <form method="POST" action="{{ route('settings.email.validate') }}" class="mt-3">@csrf<button class="btn btn-sm">Validate SMTP connection</button></form>
             </div>
             @endif

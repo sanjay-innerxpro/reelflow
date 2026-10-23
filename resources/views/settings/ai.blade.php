@@ -28,7 +28,10 @@
 
         @if(auth()->user()->isAdmin())
         <div class="card card-body h-fit text-sm">
-            <h2 class="card-title mb-2">Provider (from .env)</h2>
+            <div class="mb-2 flex items-center justify-between gap-2">
+                <h2 class="card-title">Provider</h2>
+                <a href="{{ route('admin.credentials') }}#ai" class="link text-xs">Change keys</a>
+            </div>
             <dl class="grid grid-cols-2 gap-y-1">
                 <dt class="text-slate-500">Status</dt><dd><x-badge :value="$configured ? 'active' : 'failed'">{{ $configured ? 'configured' : 'not configured' }}</x-badge></dd>
                 <dt class="text-slate-500">Provider</dt><dd>{{ $provider }}
