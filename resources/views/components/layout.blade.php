@@ -131,7 +131,10 @@
     </aside>
 
     <main class="lg:pl-64">
-        <div class="mx-auto max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8 lg:py-7">
+        {{-- Full width: a 1440px cap left wide screens with empty gutters on
+             both sides, and this app's pages are grids and tables that use
+             every pixel. --}}
+        <div class="w-full px-4 py-5 sm:px-5 lg:px-6 lg:py-6">
             @isset($header)
                 <div class="page-header mb-6 flex flex-wrap items-center justify-between gap-3">{{ $header }}</div>
             @endisset

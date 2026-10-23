@@ -64,7 +64,7 @@
             </div>
         @endif
 
-        <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-7">
+        <div class="grid grid-cols-2 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(165px,1fr))]">
             @forelse($videos as $video)
                 @php
                     $needsEye = in_array($video->ai_status->value, ['failed', 'low_confidence'], true);
