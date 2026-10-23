@@ -282,6 +282,39 @@ class AiCaptionTest extends TestCase
             && $r['response_format']['type'] === 'json_schema');
     }
 
+    public function test_spare_api_key_is_used_when_the_first_one_is_out_of_quota(): void
+    {
+        Http::fake(['*' => Http::sequence()
+            ->push(['error' => ['message' => 'Quota exceeded']], 429)
+            ->push(['error' => ['message' => 'Quota exceeded']], 429)
+            ->push(['choices' => [['message' => ['content' => FakeAiProvider::validJson()], 'finish_reason' => 'stop']]])]);
+
+        $response = (new OpenAiCompatibleProvider('key-1', 'gemini-flash-latest', 30, 'https://example.test/v1', 'gemini', 'json_schema', 'max_tokens', null, ['key-2', 'key-3']))
+            ->generate(new AiRequest('system', 'u', [], CaptionPrompt::schema(), 500));
+
+        $this->assertStringContainsString('Masala', $response->text);
+        $this->assertSame(
+            ['Bearer key-1', 'Bearer key-2', 'Bearer key-3'],
+            Http::recorded()->map(fn ($pair) => $pair[0]->header('Authorization')[0])->all(),
+        );
+    }
+
+    public function test_quota_error_is_reported_once_every_key_is_exhausted(): void
+    {
+        Http::fake(['*' => Http::response(['error' => ['message' => 'Quota exceeded']], 429)]);
+
+        $provider = new OpenAiCompatibleProvider('key-1', 'gemini-flash-latest', 30, 'https://example.test/v1', 'gemini', 'json_schema', 'max_tokens', null, ['key-2']);
+
+        try {
+            $provider->generate(new AiRequest('system', 'u', [], CaptionPrompt::schema(), 500));
+            $this->fail('Expected exception');
+        } catch (AiProviderException $e) {
+            $this->assertTrue($e->retryable);
+            $this->assertStringContainsString('every configured key', $e->getMessage());
+        }
+        $this->assertCount(2, Http::recorded());
+    }
+
     public function test_json_mode_falls_back_when_endpoint_rejects_schema(): void
     {
         Http::fake(['*' => Http::sequence()

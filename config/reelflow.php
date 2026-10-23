@@ -121,7 +121,15 @@ return [
         // Off:   none (write captions manually)
         'provider' => env('AI_PROVIDER', 'none'),
         'model' => env('AI_MODEL'),
-        'api_key' => env('AI_API_KEY'),
+        // The first key; AI_API_KEY may hold a comma-separated list (see api_keys).
+        'api_key' => trim(explode(',', (string) env('AI_API_KEY'))[0]) ?: null,
+        // Extra keys used only when the key in use is out of quota (HTTP 429).
+        // Put several in AI_API_KEY separated by commas, and/or set AI_API_KEY_2,
+        // AI_API_KEY_3 ... Keys are tried in order within a single request.
+        'api_keys' => array_values(array_filter(array_map('trim', array_merge(
+            explode(',', (string) env('AI_API_KEY')),
+            [(string) env('AI_API_KEY_2'), (string) env('AI_API_KEY_3'), (string) env('AI_API_KEY_4')],
+        )), 'strlen')),
         'base_url' => env('AI_BASE_URL'),
         'timeout_seconds' => (int) env('AI_TIMEOUT', 120),
         // json_schema | json_object | none — how strictly the endpoint is asked for JSON.

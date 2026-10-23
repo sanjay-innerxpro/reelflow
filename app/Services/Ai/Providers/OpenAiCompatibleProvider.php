@@ -19,8 +19,17 @@ class OpenAiCompatibleProvider implements AiVisionProvider
 {
     private const JSON_MODES = ['json_schema', 'json_object', 'none'];
 
+    /**
+     * Spare keys, tried in order when the one in use is out of quota.
+     *
+     * @var list<string>
+     */
+    private array $spareKeys = [];
+
+    private ?string $apiKey;
+
     public function __construct(
-        private readonly ?string $apiKey,
+        ?string $apiKey,
         private readonly ?string $modelName,
         private readonly int $timeout,
         private readonly ?string $baseUrl = null,
@@ -28,7 +37,12 @@ class OpenAiCompatibleProvider implements AiVisionProvider
         private readonly string $jsonMode = 'json_schema',
         private readonly string $maxTokensField = 'max_completion_tokens',
         private readonly ?string $reasoningEffort = null,
-    ) {}
+        array $apiKeys = [],
+    ) {
+        $keys = array_values(array_unique(array_filter(array_merge([(string) $apiKey], array_map('strval', $apiKeys)), 'strlen')));
+        $this->apiKey = $keys[0] ?? ($apiKey ?: null);
+        $this->spareKeys = array_slice($keys, 1);
+    }
 
     public function name(): string
     {
@@ -102,14 +116,45 @@ class OpenAiCompatibleProvider implements AiVisionProvider
      */
     private function send(array $payload): Response
     {
-        try {
-            return Http::withToken((string) ($this->apiKey ?: 'none'))
-                ->timeout($this->timeout)
-                ->acceptJson()
-                ->post(rtrim((string) $this->baseUrl, '/').'/chat/completions', $payload);
-        } catch (ConnectionException $e) {
-            throw new AiProviderException("Could not reach the {$this->providerName} AI endpoint: ".$e->getMessage(), true, $e);
+        while (true) {
+            try {
+                $response = Http::withToken((string) ($this->apiKey ?: 'none'))
+                    ->timeout($this->timeout)
+                    ->acceptJson()
+                    ->post(rtrim((string) $this->baseUrl, '/').'/chat/completions', $payload);
+            } catch (ConnectionException $e) {
+                throw new AiProviderException("Could not reach the {$this->providerName} AI endpoint: ".$e->getMessage(), true, $e);
+            }
+
+            // Out of quota on this key: switch to the next one and retry once
+            // per spare key. The exhausted key stays dropped for this instance.
+            if ($this->isQuotaExhausted($response) && $this->spareKeys !== []) {
+                $this->apiKey = array_shift($this->spareKeys);
+
+                continue;
+            }
+
+            return $response;
         }
+    }
+
+    /**
+     * A 429, or the 403 some endpoints return once the daily quota is spent.
+     */
+    private function isQuotaExhausted(Response $response): bool
+    {
+        if ($response->status() === 429) {
+            return true;
+        }
+
+        if ($response->status() !== 403) {
+            return false;
+        }
+
+        $message = strtolower((string) ($response->json('error.message') ?? $response->json('0.error.message') ?? $response->body()));
+
+        return str_contains($message, 'quota') || str_contains($message, 'resource_exhausted')
+            || str_contains($message, 'rate limit') || str_contains($message, 'billing');
     }
 
     private function rejectsResponseFormat(Response $response): bool
@@ -125,7 +170,9 @@ class OpenAiCompatibleProvider implements AiVisionProvider
         if ($response->failed()) {
             $status = $response->status();
             $message = $response->json('error.message') ?? $response->json('0.error.message') ?? 'HTTP '.$status;
-            $hint = $status === 429 ? ' (free-tier rate limit or daily quota reached; it will be retried)' : '';
+            $hint = $status === 429
+                ? ' (free-tier rate limit or daily quota reached on every configured key; it will be retried)'
+                : '';
             throw new AiProviderException("AI provider error ({$status}): {$message}{$hint}", $status === 429 || $status >= 500);
         }
 

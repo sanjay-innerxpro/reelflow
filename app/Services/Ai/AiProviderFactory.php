@@ -20,7 +20,7 @@ class AiProviderFactory
         }
 
         if ($provider === 'anthropic') {
-            return filled(config('reelflow.ai.api_key'));
+            return filled($this->firstKey());
         }
 
         $preset = config("reelflow.ai.presets.{$provider}");
@@ -28,9 +28,15 @@ class AiProviderFactory
             return false;
         }
 
-        return (! $preset['requires_key'] || filled(config('reelflow.ai.api_key')))
+        return (! $preset['requires_key'] || filled($this->firstKey()))
             && filled(config('reelflow.ai.model') ?: $preset['model'])
             && filled(config('reelflow.ai.base_url') ?: $preset['base_url']);
+    }
+
+    /** The key the next request will use: AI_API_KEY, else the first spare. */
+    private function firstKey(): ?string
+    {
+        return config('reelflow.ai.api_key') ?: (config('reelflow.ai.api_keys')[0] ?? null);
     }
 
     /**
@@ -74,6 +80,7 @@ class AiProviderFactory
             jsonMode: $c['json_mode'] ?: $preset['json_mode'],
             maxTokensField: $preset['max_tokens_field'],
             reasoningEffort: $c['reasoning_effort'] ?? null,
+            apiKeys: $c['api_keys'] ?? [],
         );
     }
 
@@ -98,7 +105,7 @@ class AiProviderFactory
             return new NullTranscriptionProvider;
         }
 
-        return new OpenAiTranscriptionProvider($c['api_key'] ?: config('reelflow.ai.api_key'), $model, $baseUrl, config('reelflow.ai.timeout_seconds'), $c['provider'] === 'compatible');
+        return new OpenAiTranscriptionProvider($c['api_key'] ?: $this->firstKey(), $model, $baseUrl, config('reelflow.ai.timeout_seconds'), $c['provider'] === 'compatible');
     }
 
     /**
