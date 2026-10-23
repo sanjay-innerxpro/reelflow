@@ -78,9 +78,9 @@
                         @endif
                         {{-- Everything readable sits on the image, so the card is as
                              tall as the reel and no taller. --}}
-                        <div class="absolute inset-x-0 bottom-0 bg-linear-to-t from-black/85 via-black/45 to-transparent pt-8 pb-2 pl-2.5 pr-2.5">
+                        <div class="absolute inset-x-0 bottom-0 bg-linear-to-t from-black/90 via-black/60 to-transparent pt-10 pb-2 pl-2.5 pr-2.5">
                             <div class="truncate text-[12px] font-medium text-on-color" title="{{ $video->original_filename }}">{{ $video->original_filename }}</div>
-                            <div class="mt-0.5 flex items-center gap-1 truncate text-[11px] text-on-color/70" title="{{ $video->folder }}">
+                            <div class="mt-0.5 flex items-center gap-1 truncate text-[11px] text-on-color/80" title="{{ $video->folder }}">
                                 <x-icon name="folder" class="h-3 w-3 shrink-0" /> <span class="truncate">{{ $video->folder ?: 'No folder' }}</span>
                             </div>
                         </div>
