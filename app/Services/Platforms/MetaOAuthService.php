@@ -90,8 +90,7 @@ class MetaOAuthService
         if ($pages === []) {
             $missing = array_diff(['pages_show_list', 'pages_manage_posts'], $granted);
             throw new OAuthException(match (true) {
-                $missing !== [] => 'Facebook did not grant '.implode(' and ', $missing).'. Connect again and allow every permission ReelFlow asks for. '
-                    .'If Facebook never showed these permissions, the Meta app has not passed App Review yet: until it does, only people added under App roles (Administrator, Developer or Tester) in developers.facebook.com can grant them.',
+                $missing !== [] => $this->missingPermissionMessage($userToken, $missing),
                 $unavailable !== [] => 'Facebook lists '.implode(', ', $unavailable).' but gives ReelFlow no access to post there. In Meta Business Suite, give your Facebook profile full control (or "Content") of the Page, then connect again.',
                 default => 'Facebook shared no Pages with ReelFlow. Connect again and, in the Facebook window, choose "Edit previous settings" and tick every Page you want to use. '
                     .'Facebook does not let apps post to a personal profile, only to Pages; if you have no Page yet, create one (free) at facebook.com/pages/create and link your Instagram professional account to it.',
@@ -102,6 +101,35 @@ class MetaOAuthService
         Cache::put($this->pendingKey($key), Crypt::encrypt(['pages' => $pages, 'scopes' => $granted, 'unavailable' => $unavailable]), now()->addMinutes(15));
 
         return $key;
+    }
+
+    /**
+     * Name the Facebook account that logged in and, when it is not one of
+     * the Meta app's roles, say that this is why (unreviewed apps only
+     * grant Page permissions to their Administrators, Developers and Testers).
+     *
+     * @param  array<int, string>  $missing
+     */
+    private function missingPermissionMessage(string $userToken, array $missing): string
+    {
+        $message = 'Facebook did not grant '.implode(' and ', $missing).'.';
+
+        try {
+            $me = $this->graph->get('me', $userToken, ['fields' => 'id,name'], 'Meta profile');
+            $roles = $this->graph->appGet(config('reelflow.meta.app_id').'/roles', ['access_token' => $this->graph->appToken(), 'limit' => 500], 'Meta app roles')['data'] ?? [];
+            $role = collect($roles)->firstWhere('user', $me['id'] ?? null)['role'] ?? null;
+        } catch (PublishException) {
+            return $message.' Connect again and allow every permission. If Facebook never showed them, add your Facebook account under App roles in developers.facebook.com (the app has not passed App Review yet).';
+        }
+
+        $who = 'You signed in to Facebook as '.($me['name'] ?? 'an unknown account');
+        if ($role === null) {
+            return $message.' '.$who.', who has no role on the Meta app. Until the app passes App Review, Facebook only gives Page permissions to the app\'s Administrators, Developers and Testers: '
+                .'add this account in developers.facebook.com → your app → App roles, accept the invitation, then connect again. Or sign in to Facebook with the account that is the app\'s administrator.';
+        }
+
+        return $message.' '.$who.' ('.rtrim($role, 's').' of the Meta app). Connect again and, in the Facebook window, choose "Edit previous settings" and switch on every permission and Page. '
+            .'If the permissions are not offered at all, add them to the app in developers.facebook.com → Use cases → "Manage everything on your Page".';
     }
 
     private const PAGE_FIELDS = 'id,name,access_token,category,tasks,picture{url},instagram_business_account{id,username,name,profile_picture_url}';
