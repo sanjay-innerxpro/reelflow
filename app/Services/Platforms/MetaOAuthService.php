@@ -36,6 +36,9 @@ class MetaOAuthService
             'redirect_uri' => config('reelflow.meta.redirect_uri'),
             'state' => $state,
             'response_type' => 'code',
+            // Without this, Facebook never asks again for a permission the
+            // person declined once, and the login silently comes back without it.
+            'auth_type' => 'rerequest',
         ];
 
         if ($configId = config('reelflow.meta.config_id')) {
@@ -87,7 +90,8 @@ class MetaOAuthService
         if ($pages === []) {
             $missing = array_diff(['pages_show_list', 'pages_manage_posts'], $granted);
             throw new OAuthException(match (true) {
-                $missing !== [] => 'Facebook did not grant '.implode(' and ', $missing).'. Connect again and allow every permission ReelFlow asks for.',
+                $missing !== [] => 'Facebook did not grant '.implode(' and ', $missing).'. Connect again and allow every permission ReelFlow asks for. '
+                    .'If Facebook never showed these permissions, the Meta app has not passed App Review yet: until it does, only people added under App roles (Administrator, Developer or Tester) in developers.facebook.com can grant them.',
                 $unavailable !== [] => 'Facebook lists '.implode(', ', $unavailable).' but gives ReelFlow no access to post there. In Meta Business Suite, give your Facebook profile full control (or "Content") of the Page, then connect again.',
                 default => 'Facebook shared no Pages with ReelFlow. Connect again and, in the Facebook window, choose "Edit previous settings" and tick every Page you want to use. '
                     .'Facebook does not let apps post to a personal profile, only to Pages; if you have no Page yet, create one (free) at facebook.com/pages/create and link your Instagram professional account to it.',
