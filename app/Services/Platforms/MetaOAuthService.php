@@ -74,28 +74,104 @@ class MetaOAuthService
             $granted = collect($this->graph->get('me/permissions', $userToken, [], 'Meta permissions')['data'] ?? [])
                 ->where('status', 'granted')->pluck('permission')->values()->all();
 
-            $pages = $this->graph->get('me/accounts', $userToken, [
-                'fields' => 'id,name,access_token,category,tasks,picture{url},instagram_business_account{id,username,name,profile_picture_url}',
-                'limit' => 100,
-            ], 'Meta pages')['data'] ?? [];
+            $found = $this->fetchPages($userToken, $granted);
         } catch (PublishException $e) {
             throw new OAuthException('Meta authorisation failed: '.$e->getMessage(), 0, $e);
         }
 
+        // A Page without a Page token (e.g. a Business portfolio Page the
+        // person has no task on) can be listed but never published to.
+        $pages = array_values(array_filter($found, fn ($p) => filled($p['access_token'] ?? null)));
+        $unavailable = array_values(array_map(fn ($p) => $p['name'] ?? $p['id'], array_filter($found, fn ($p) => blank($p['access_token'] ?? null))));
+
         if ($pages === []) {
-            throw new OAuthException('No Facebook Pages were shared with ReelFlow. Reconnect and select at least one Page.');
+            $missing = array_diff(['pages_show_list', 'pages_manage_posts'], $granted);
+            throw new OAuthException(match (true) {
+                $missing !== [] => 'Facebook did not grant '.implode(' and ', $missing).'. Connect again and allow every permission ReelFlow asks for.',
+                $unavailable !== [] => 'Facebook lists '.implode(', ', $unavailable).' but gives ReelFlow no access to post there. In Meta Business Suite, give your Facebook profile full control (or "Content") of the Page, then connect again.',
+                default => 'Facebook shared no Pages with ReelFlow. Connect again and, in the Facebook window, choose "Edit previous settings" and tick every Page you want to use. '
+                    .'Facebook does not let apps post to a personal profile, only to Pages; if you have no Page yet, create one (free) at facebook.com/pages/create and link your Instagram professional account to it.',
+            });
         }
 
         $key = Str::random(40);
-        Cache::put($this->pendingKey($key), Crypt::encrypt(['pages' => $pages, 'scopes' => $granted]), now()->addMinutes(15));
+        Cache::put($this->pendingKey($key), Crypt::encrypt(['pages' => $pages, 'scopes' => $granted, 'unavailable' => $unavailable]), now()->addMinutes(15));
 
         return $key;
+    }
+
+    private const PAGE_FIELDS = 'id,name,access_token,category,tasks,picture{url},instagram_business_account{id,username,name,profile_picture_url}';
+
+    /**
+     * Pages on the person's own profile (me/accounts) plus the Pages they
+     * reach through a Business portfolio, which me/accounts leaves out.
+     *
+     * @param  array<int, string>  $granted
+     * @return array<int, array<string, mixed>>
+     */
+    private function fetchPages(string $userToken, array $granted): array
+    {
+        $pages = [];
+        foreach ($this->paginate('me/accounts', $userToken, ['fields' => self::PAGE_FIELDS, 'limit' => 100], 'Meta pages') as $page) {
+            $pages[$page['id']] = $page;
+        }
+
+        if (! in_array('business_management', $granted, true)) {
+            return array_values($pages);
+        }
+
+        // Business lookups are a bonus: never fail the connection over them.
+        try {
+            $businesses = $this->paginate('me/businesses', $userToken, ['fields' => 'id,name', 'limit' => 100], 'Meta businesses');
+        } catch (PublishException) {
+            $businesses = [];
+        }
+
+        foreach ($businesses as $business) {
+            foreach (['owned_pages', 'client_pages'] as $edge) {
+                try {
+                    $found = $this->paginate($business['id'].'/'.$edge, $userToken, ['fields' => self::PAGE_FIELDS, 'limit' => 100], 'Meta business pages');
+                } catch (PublishException) {
+                    continue;
+                }
+                foreach ($found as $page) {
+                    if (isset($page['id']) && ! isset($pages[$page['id']])) {
+                        $pages[$page['id']] = $page + ['business' => $business['name'] ?? null];
+                    }
+                }
+            }
+        }
+
+        return array_values($pages);
+    }
+
+    /**
+     * Follow Graph cursor paging (Meta returns at most 100 items per call).
+     *
+     * @param  array<string, mixed>  $query
+     * @return array<int, array<string, mixed>>
+     */
+    private function paginate(string $path, string $token, array $query, string $context, int $maxCalls = 10): array
+    {
+        $items = [];
+        for ($i = 0; $i < $maxCalls; $i++) {
+            $response = $this->graph->get($path, $token, $query, $context);
+            array_push($items, ...array_values($response['data'] ?? []));
+
+            $after = $response['paging']['cursors']['after'] ?? null;
+            if (! $after || empty($response['paging']['next'])) {
+                break;
+            }
+            $query['after'] = $after;
+        }
+
+        return $items;
     }
 
     /**
      * Page list for the selection screen (no tokens).
      *
-     * @return array{pages: array<int, array<string, mixed>>, scopes: array<int, string>}
+     * @return array{pages: array<int, array<string, mixed>>, scopes: array<int, string>, unavailable: array<int, string>}
      */
     public function pendingSelection(string $key): array
     {
@@ -103,10 +179,12 @@ class MetaOAuthService
 
         return [
             'scopes' => $data['scopes'],
+            'unavailable' => $data['unavailable'] ?? [],
             'pages' => array_map(fn ($p) => [
                 'id' => $p['id'],
                 'name' => $p['name'],
                 'category' => $p['category'] ?? null,
+                'business' => $p['business'] ?? null,
                 'can_publish' => in_array('CREATE_CONTENT', $p['tasks'] ?? [], true) || ! isset($p['tasks']),
                 'instagram' => isset($p['instagram_business_account']['id']) ? [
                     'id' => $p['instagram_business_account']['id'],

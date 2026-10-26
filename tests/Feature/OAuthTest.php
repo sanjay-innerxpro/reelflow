@@ -130,6 +130,63 @@ class OAuthTest extends TestCase
         Http::assertSent(fn (Request $r) => str_contains($r->url(), 'fb_exchange_token=EAAshort'));
     }
 
+    public function test_meta_flow_finds_paged_and_business_portfolio_pages(): void
+    {
+        Http::fake([
+            'graph.facebook.com/v23.0/oauth/access_token*' => Http::sequence()
+                ->push(['access_token' => 'EAAshort'])
+                ->push(['access_token' => 'EAAlonglived']),
+            'graph.facebook.com/v23.0/me/permissions*' => Http::response(['data' => [
+                ['permission' => 'pages_show_list', 'status' => 'granted'],
+                ['permission' => 'pages_manage_posts', 'status' => 'granted'],
+                ['permission' => 'business_management', 'status' => 'granted'],
+            ]]),
+            'graph.facebook.com/v23.0/me/accounts*' => Http::sequence()
+                ->push(['data' => [['id' => 'page1', 'name' => 'First Page', 'access_token' => 'EAAp1', 'tasks' => ['CREATE_CONTENT']]], 'paging' => ['cursors' => ['after' => 'c1'], 'next' => 'https://graph.facebook.com/next']])
+                ->push(['data' => [['id' => 'page2', 'name' => 'Second Page', 'access_token' => 'EAAp2', 'tasks' => ['CREATE_CONTENT']]], 'paging' => ['cursors' => ['after' => 'c2']]]),
+            'graph.facebook.com/v23.0/me/businesses*' => Http::response(['data' => [['id' => 'biz1', 'name' => 'Acme Ltd']]]),
+            'graph.facebook.com/v23.0/biz1/owned_pages*' => Http::response(['data' => [
+                ['id' => 'page1', 'name' => 'First Page', 'access_token' => 'EAAp1'],
+                ['id' => 'page3', 'name' => 'Business Page', 'access_token' => 'EAAp3', 'tasks' => ['CREATE_CONTENT']],
+                ['id' => 'page4', 'name' => 'No Access Page'],
+            ]]),
+            'graph.facebook.com/v23.0/biz1/client_pages*' => Http::response(['error' => ['message' => 'nope', 'code' => 200]], 403),
+        ]);
+
+        $location = $this->actingAs($this->user)->get(route('accounts.meta.connect'))->headers->get('Location');
+        parse_str(parse_url($location, PHP_URL_QUERY), $q);
+        $select = $this->get(route('accounts.meta.callback', ['code' => 'c', 'state' => $q['state']]));
+        $key = basename(parse_url($select->headers->get('Location'), PHP_URL_PATH));
+
+        $this->get(route('accounts.meta.select', $key))->assertOk()
+            ->assertSee('First Page')->assertSee('Second Page')
+            ->assertSee('Business Page')->assertSee('via Business portfolio Acme Ltd')
+            ->assertSee('Found but not usable: No Access Page');
+        Http::assertSent(fn (Request $r) => str_contains($r->url(), 'me/accounts') && str_contains($r->url(), 'after=c1'));
+    }
+
+    public function test_meta_without_pages_explains_why(): void
+    {
+        Http::fake([
+            'graph.facebook.com/v23.0/oauth/access_token*' => Http::response(['access_token' => 'EAAtoken']),
+            'graph.facebook.com/v23.0/me/permissions*' => Http::response(['data' => [
+                ['permission' => 'pages_show_list', 'status' => 'granted'],
+                ['permission' => 'pages_manage_posts', 'status' => 'granted'],
+            ]]),
+            'graph.facebook.com/v23.0/me/accounts*' => Http::response(['data' => []]),
+        ]);
+
+        $location = $this->actingAs($this->user)->get(route('accounts.meta.connect'))->headers->get('Location');
+        parse_str(parse_url($location, PHP_URL_QUERY), $q);
+
+        $this->get(route('accounts.meta.callback', ['code' => 'c', 'state' => $q['state']]))
+            ->assertRedirect(route('accounts.index'))
+            ->assertSessionHasErrors('oauth');
+        $message = session('errors')->first('oauth');
+        $this->assertStringContainsString('Edit previous settings', $message);
+        $this->assertStringContainsString('personal profile', $message);
+    }
+
     public function test_google_flow_uses_pkce_and_stores_refresh_token(): void
     {
         Http::fake([
