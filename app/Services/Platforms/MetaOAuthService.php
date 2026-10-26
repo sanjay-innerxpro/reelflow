@@ -12,6 +12,7 @@ use App\Support\Tenancy\Tenant;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 /**
@@ -123,6 +124,18 @@ class MetaOAuthService
         }
 
         $who = 'You signed in to Facebook as '.($me['name'] ?? 'an unknown account');
+        if ($role === null && filled($me['id'] ?? null)) {
+            // Try to invite this account as a Tester through the Graph API.
+            try {
+                $this->graph->appPost(config('reelflow.meta.app_id').'/roles', ['user' => $me['id'], 'role' => 'testers'], 'Meta add tester');
+
+                return $message.' '.$who.', who had no role on the Meta app, so ReelFlow has invited this account as a Tester. '
+                    .'Accept the invitation at developers.facebook.com/requests (signed in to Facebook as this account), then connect again.';
+            } catch (PublishException $e) {
+                Log::info('Meta tester invite failed', ['error' => $e->getMessage()]);
+                $message .= ' (ReelFlow tried to add you as a Tester automatically, but Meta refused: '.$e->getMessage().')';
+            }
+        }
         if ($role === null) {
             return $message.' '.$who.', who has no role on the Meta app. Until the app passes App Review, Facebook only gives Page permissions to the app\'s Administrators, Developers and Testers: '
                 .'add this account in developers.facebook.com → your app → App roles, accept the invitation, then connect again. Or sign in to Facebook with the account that is the app\'s administrator.';

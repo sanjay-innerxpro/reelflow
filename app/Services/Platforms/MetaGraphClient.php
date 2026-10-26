@@ -71,6 +71,17 @@ class MetaGraphClient
         return $this->send(fn () => Http::acceptJson()->timeout(30)->get($this->url($path), $query), $context);
     }
 
+    /**
+     * App-token POST (e.g. inviting an app role).
+     *
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    public function appPost(string $path, array $data, string $context): array
+    {
+        return $this->send(fn () => Http::acceptJson()->asForm()->timeout(30)->post($this->url($path), $data + ['access_token' => $this->appToken()]), $context);
+    }
+
     public function appToken(): string
     {
         return config('reelflow.meta.app_id').'|'.config('reelflow.meta.app_secret');
